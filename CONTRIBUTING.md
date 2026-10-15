@@ -5,7 +5,7 @@ requests are limited to collaborators. To report a security problem, see [SECURI
 
 ## Setup
 
-You need Go 1.26 or newer and [just](https://github.com/casey/just). golangci-lint and govulncheck run
+You need Go 1.27 or newer and [just](https://github.com/casey/just). golangci-lint and govulncheck run
 through `go run` at pinned versions, so you don't need to install them.
 
 ```sh

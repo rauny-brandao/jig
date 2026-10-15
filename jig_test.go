@@ -413,7 +413,7 @@ func TestApplyRejectsChecksumMismatchAndKeepsTheOldBinary(t *testing.T) {
 		t.Run(fmt.Sprintf("streaming=%v", streaming), func(t *testing.T) {
 			env := jigtest.NewEnv()
 			deps := env.Deps()
-			verifier := &recordingVerifier{VerifyingFetcher: jigtest.VerifyingFetcher{Fetcher: env.Fetcher}}
+			verifier := &recordingVerifier{Fetcher: env.Fetcher}
 			if streaming {
 				deps.Fetcher = verifier
 			}

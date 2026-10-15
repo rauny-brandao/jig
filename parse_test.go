@@ -72,6 +72,7 @@ tools: {}
 extras:
   - kind: uv-tool
     name: app
+    description: "An example app"
     source: "git+https://example.com/app.git"
     platforms: [darwin]
     reinstall: always
@@ -93,6 +94,9 @@ extras:
 	app := m.Extras[0]
 	if app.Kind != "uv-tool" || app.Param("source") != "git+https://example.com/app.git" || app.Reinstall != "always" {
 		t.Errorf("app = %+v", app)
+	}
+	if app.Description != "An example app" {
+		t.Errorf("Description = %q", app.Description)
 	}
 	if len(app.Params) != 1 {
 		t.Errorf("common fields leaked into Params: %v", app.Params)

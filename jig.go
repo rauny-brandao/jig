@@ -143,6 +143,14 @@ func WithBeforeKind(kind Kind, check func(ctx context.Context) error) Option {
 	return func(j *Jig) { j.beforeKind[kind] = check }
 }
 
+// WithCommandsFromPath makes handlers run the tools that own extras by bare
+// name, found on PATH, instead of the managed binaries. Use it for health
+// checks that should see what the user's shell runs, which may be another
+// copy of the tool.
+func WithCommandsFromPath() Option {
+	return func(j *Jig) { j.commandsFromPath = true }
+}
+
 // WithTimeouts sets how long handlers may run read-only probes and
 // installs or removals. The defaults are 2 and 15 minutes.
 func WithTimeouts(probe, mutate time.Duration) Option {
@@ -160,6 +168,8 @@ type Jig struct {
 	beforeKind    map[Kind]func(context.Context) error
 	probeTimeout  time.Duration
 	mutateTimeout time.Duration
+	// commandsFromPath makes Env.Command return bare tool names.
+	commandsFromPath bool
 }
 
 // New returns a Jig that installs tools for platform into dirs.
@@ -256,6 +266,9 @@ func (j *Jig) Env(m *manifest.Manifest) Env {
 		ProbeTimeout:  j.probeTimeout,
 		MutateTimeout: j.mutateTimeout,
 		command: func(tool string) string {
+			if j.commandsFromPath {
+				return tool
+			}
 			if asset, err := m.Asset(tool, j.platform.Key()); err == nil {
 				return j.BinaryPath(asset)
 			}

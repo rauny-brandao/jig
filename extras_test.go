@@ -254,6 +254,20 @@ func TestHandlersReachManagedTools(t *testing.T) {
 	}
 }
 
+func TestCommandsFromPathUseBareNames(t *testing.T) {
+	env := jigtest.NewEnv()
+	f := newFakes()
+	j := newJig(t, env, _linux, f.option(), jig.WithCommandsFromPath())
+	stubInstalled(env, filepath.Join(_dirs.Bin, "gh"), "gh", "2.0.0")
+
+	if _, err := j.Status(t.Context(), extrasManifest(env)); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.ext.commands["gh"]; got != "gh" {
+		t.Errorf("Command(gh) = %q, want the bare name", got)
+	}
+}
+
 func TestValidateChecksKinds(t *testing.T) {
 	env := jigtest.NewEnv()
 	f := newFakes()

@@ -24,6 +24,8 @@ type Extra struct {
 	Kind string `yaml:"kind" json:"kind"`
 	// Name identifies the item. It must be unique across tools and extras.
 	Name string `yaml:"name" json:"name"`
+	// Description says what the item is for. jig doesn't use it.
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	// Requires lists the tools and extras that must be installed first and
 	// removed last.
 	Requires []string `yaml:"requires,omitempty" json:"requires,omitempty"`
