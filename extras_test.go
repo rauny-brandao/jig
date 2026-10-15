@@ -254,6 +254,39 @@ func TestHandlersReachManagedTools(t *testing.T) {
 	}
 }
 
+func TestCommandErrorShowsTheEndOfTheOutput(t *testing.T) {
+	lines := make([]string, 25)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d   ", i+1)
+	}
+	lines[24] = "error: the cause"
+	err := &jig.CommandError{Command: "uv tool install app", Result: jig.CommandResult{ExitCode: 2, Stderr: strings.Join(lines, "\n")}}
+
+	want := "uv tool install app: exit code 2: (15 earlier lines omitted)\nline 16\n"
+	if got := err.Error(); !strings.HasPrefix(got, want) || !strings.HasSuffix(got, "line 24\nerror: the cause") {
+		t.Errorf("Error() = %q", got)
+	}
+
+	short := &jig.CommandError{Command: "gh", Result: jig.CommandResult{ExitCode: 1, Stdout: "only stdout\n"}}
+	if got := short.Error(); got != "gh: exit code 1: only stdout" {
+		t.Errorf("Error() = %q", got)
+	}
+}
+
+func TestCommandsFromPathUseBareNames(t *testing.T) {
+	env := jigtest.NewEnv()
+	f := newFakes()
+	j := newJig(t, env, _linux, f.option(), jig.WithCommandsFromPath())
+	stubInstalled(env, filepath.Join(_dirs.Bin, "gh"), "gh", "2.0.0")
+
+	if _, err := j.Status(t.Context(), extrasManifest(env)); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.ext.commands["gh"]; got != "gh" {
+		t.Errorf("Command(gh) = %q, want the bare name", got)
+	}
+}
+
 func TestValidateChecksKinds(t *testing.T) {
 	env := jigtest.NewEnv()
 	f := newFakes()

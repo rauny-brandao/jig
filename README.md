@@ -4,7 +4,7 @@ jig is a Go library for installing pinned, checksum-verified developer tools fro
 manifest, along with the extras those tools manage: CLI extensions, language runtimes, global
 packages.
 
-> **Status:** v0.2, pre-release. The API may change until v1.0.
+> **Status:** v0.3, pre-release. The API may change until v1.0.
 
 ## Why jig
 
@@ -50,6 +50,7 @@ Other tool fields:
 - `cleanup_paths` removes stale home-relative paths after an install.
 
 Fields common to every extra:
+- `description` says what the extra is for. jig doesn't use it.
 - `requires` lists the tools and extras it needs. They are installed first and removed last.
 - `platforms` limits the extra to operating systems (`darwin`) or platform keys (`darwin_arm64`).
 - `reinstall: always` reinstalls the extra on every apply, for sources that track a branch.
@@ -67,7 +68,8 @@ See [examples/tools.yaml](examples/tools.yaml) for a complete manifest.
 | `jdk` | A Java Development Kit | Coursier (`cs`) | `jvm` (defaults to the name) |
 
 Each kind rejects fields it doesn't know, so typos fail validation. Removing a JDK only ever deletes
-its directory inside Coursier's cache.
+its directory and downloaded archive inside Coursier's caches. A JDK installed anywhere else is left in
+place, and the removal fails with an error that wraps `jig.ErrNotManaged`.
 
 ## Usage
 
@@ -93,6 +95,8 @@ Options:
 - `jig.WithBeforeKind(kind, check)` runs a precondition once before installing extras of a kind,
   such as checking that gh is logged in.
 - `jig.WithHandlers(...)` registers custom kinds by implementing `jig.Handler`.
+- `jig.WithCommandsFromPath()` makes handlers run parent tools such as `gh` from PATH instead of the
+  managed binaries, for health checks that should see what the user's shell runs.
 - `jig.WithParallelism(n)` and `jig.WithTimeouts(probe, mutate)` tune concurrency and timeouts.
 
 ### Testing code that uses jig
@@ -120,6 +124,7 @@ go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml -chec
 |---|---|
 | v0.1 | Binaries: manifest, download and verify, safe extraction, Status / Plan / Apply, checksum updater |
 | v0.2 | Extras: five built-in kinds, custom kinds, `requires` ordering, removal |
+| v0.3 | Go 1.27, extra descriptions, running parent tools from PATH, full JDK removal, shorter command errors |
 | v1.0 | Stable API |
 | v1.1 | Install record: remove tools dropped from the manifest, uninstall a single tool |
 

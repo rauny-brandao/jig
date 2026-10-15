@@ -28,6 +28,10 @@ var (
 	// ErrRequirementMissing means an action was not run because an item it
 	// requires is neither installed nor part of the plan.
 	ErrRequirementMissing = errors.New("requirement not installed")
+	// ErrNotManaged is returned by Handler.Remove when the item is installed
+	// somewhere the handler does not manage, so it is left in place. Apply
+	// reports the action as failed; callers may treat it as a warning.
+	ErrNotManaged = errors.New("not managed")
 )
 
 // Handler installs, detects and removes one kind of extra through the tool
@@ -128,7 +132,12 @@ func (e Env) run(ctx context.Context, timeout time.Duration, env []string, name 
 	return result, nil
 }
 
-// CommandError is a command that ran but exited non-zero.
+// _errorOutputLines is how many trailing lines of a failed command's output
+// CommandError.Error includes; the cause is usually at the end.
+const _errorOutputLines = 10
+
+// CommandError is a command that ran but exited non-zero. Error includes only
+// the last lines of its output; Result holds all of it.
 type CommandError struct {
 	Command string
 	Result  CommandResult
@@ -141,9 +150,23 @@ func (e *CommandError) Error() string {
 	}
 	msg := e.Command + ": exit code " + strconv.Itoa(e.Result.ExitCode)
 	if detail != "" {
-		msg += ": " + detail
+		msg += ": " + tailLines(detail, _errorOutputLines)
 	}
 	return msg
+}
+
+// tailLines returns the last n lines of s, without trailing spaces, noting how
+// many earlier lines were left out.
+func tailLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t\r")
+	}
+	if len(lines) <= n {
+		return strings.Join(lines, "\n")
+	}
+	omitted := len(lines) - n
+	return fmt.Sprintf("(%d earlier lines omitted)\n", omitted) + strings.Join(lines[omitted:], "\n")
 }
 
 func commandLine(name string, args []string) string {

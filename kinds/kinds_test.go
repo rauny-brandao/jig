@@ -355,21 +355,24 @@ func TestJDK(t *testing.T) {
 		vars     map[string]string
 		home     string
 		deleted  string
+		download string // the archive Coursier downloaded, deleted too
 	}{
 		{"archive cache on macOS", darwin, nil, arcHome,
-			filepath.Join(_home, "Library", "Caches", "Coursier", "arc", "https", "github.com", "adoptium", "releases", "OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.3_9.tar.gz")},
+			filepath.Join(_home, "Library", "Caches", "Coursier", "arc", "https", "github.com", "adoptium", "releases", "OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.3_9.tar.gz"),
+			filepath.Join(_home, "Library", "Caches", "Coursier", "v1", "https", "github.com", "adoptium", "releases", "OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.3_9.tar.gz")},
 		{"jvm cache on Linux", _linux, nil,
 			filepath.Join(_home, ".cache", "coursier", "jvm", "temurin@25", "bin", ".."),
-			filepath.Join(_home, ".cache", "coursier", "jvm", "temurin@25")},
+			filepath.Join(_home, ".cache", "coursier", "jvm", "temurin@25"), ""},
 		{"overridden jvm cache", _linux, map[string]string{"COURSIER_JVM_CACHE": filepath.FromSlash("/opt/jvms")},
-			filepath.FromSlash("/opt/jvms/temurin@25/Contents/Home"), filepath.FromSlash("/opt/jvms/temurin@25")},
+			filepath.FromSlash("/opt/jvms/temurin@25/Contents/Home"), filepath.FromSlash("/opt/jvms/temurin@25"), ""},
 		// Coursier reads COURSIER_ARCHIVE_CACHE; COURSIER_ARC_CACHE has no effect on it.
-		{"overridden archive cache", _linux, map[string]string{"COURSIER_ARCHIVE_CACHE": filepath.FromSlash("/opt/arc"), "COURSIER_ARC_CACHE": filepath.FromSlash("/wrong")},
-			filepath.FromSlash("/opt/arc/https/example.com/jdk.tar.gz/jdk-25/bin/.."), filepath.FromSlash("/opt/arc/https/example.com/jdk.tar.gz")},
+		{"overridden archive and download caches", _linux, map[string]string{"COURSIER_ARCHIVE_CACHE": filepath.FromSlash("/opt/arc"), "COURSIER_ARC_CACHE": filepath.FromSlash("/wrong"), "COURSIER_CACHE": filepath.FromSlash("/opt/dl")},
+			filepath.FromSlash("/opt/arc/https/example.com/jdk.tar.gz/jdk-25/bin/.."), filepath.FromSlash("/opt/arc/https/example.com/jdk.tar.gz"),
+			filepath.FromSlash("/opt/dl/https/example.com/jdk.tar.gz")},
 		{"windows paths compare case-insensitively", manifest.Platform{OS: "windows", Arch: "amd64"},
 			map[string]string{"LOCALAPPDATA": `C:\Users\Dev\AppData\Local`},
 			`c:\users\dev\appdata\local\Coursier\Cache\jvm\temurin@25`,
-			filepath.Join(`C:\Users\Dev\AppData\Local`, "Coursier", "Cache", "jvm", "temurin@25")},
+			filepath.Join(`C:\Users\Dev\AppData\Local`, "Coursier", "Cache", "jvm", "temurin@25"), ""},
 	}
 	for _, tt := range removal {
 		t.Run("remove from "+tt.name, func(t *testing.T) {
@@ -379,6 +382,15 @@ func TestJDK(t *testing.T) {
 			fake.FS.Seed(filepath.Join(tt.deleted, "release"), []byte("JAVA_VERSION=25"), 0)
 			sibling := filepath.Join(filepath.Dir(tt.deleted), "keep", "file")
 			fake.FS.Seed(sibling, []byte("x"), 0)
+			var downloaded []string
+			if tt.download != "" {
+				checked := filepath.Join(filepath.Dir(tt.download), "."+filepath.Base(tt.download)+".checked")
+				downloaded = []string{tt.download, checked}
+				for _, p := range downloaded {
+					fake.FS.Seed(p, []byte("x"), 0)
+				}
+				fake.FS.Seed(filepath.Join(filepath.Dir(tt.download), "other.tar.gz"), []byte("x"), 0)
+			}
 
 			if err := (kinds.JDK{}).Remove(t.Context(), env, jdk); err != nil {
 				t.Fatalf("Remove() = %v", err)
@@ -389,6 +401,14 @@ func TestJDK(t *testing.T) {
 			if !fake.FS.Exists(sibling) {
 				t.Error("a sibling of the JDK was deleted")
 			}
+			for _, p := range downloaded {
+				if fake.FS.Exists(p) {
+					t.Errorf("download %s not deleted", p)
+				}
+			}
+			if tt.download != "" && !fake.FS.Exists(filepath.Join(filepath.Dir(tt.download), "other.tar.gz")) {
+				t.Error("another download was deleted")
+			}
 		})
 	}
 
@@ -398,8 +418,8 @@ func TestJDK(t *testing.T) {
 		fake.Runner.Stub(ok(outside), "cs", "java-home", "--jvm", "temurin:25", "--mode", "offline")
 		fake.FS.Seed(filepath.Join(outside, "release"), []byte("x"), 0)
 
-		if err := (kinds.JDK{}).Remove(t.Context(), env, jdk); err == nil || !strings.Contains(err.Error(), "not inside Coursier") {
-			t.Fatalf("Remove() = %v, want refusal", err)
+		if err := (kinds.JDK{}).Remove(t.Context(), env, jdk); !errors.Is(err, jig.ErrNotManaged) || !strings.Contains(err.Error(), "not inside Coursier") {
+			t.Fatalf("Remove() = %v, want an ErrNotManaged refusal", err)
 		}
 		if !fake.FS.Exists(outside) {
 			t.Error("a JDK outside Coursier's caches was deleted")
