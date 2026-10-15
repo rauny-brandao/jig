@@ -9,7 +9,7 @@ You need Go 1.27 or newer and [just](https://github.com/casey/just). golangci-li
 through `go run` at pinned versions, so you don't need to install them.
 
 ```sh
-just check   # build, test, lint, hygiene: the same checks as CI
+just check   # format, then build, test, lint, hygiene: the same checks as CI
 just test    # tests only
 JIG_E2E=1 go test -run TestEndToEnd .   # real install and removal of examples/tools.yaml (sandboxed)
 JIG_E2E=1 JIG_E2E_JDK=1 go test -run TestEndToEnd .   # the same, including the JDK (a large download)

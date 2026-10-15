@@ -4,8 +4,13 @@
 golangci_version := "v2.14.0"
 govulncheck_version := "v1.9.0"
 
-# Everything CI runs.
-check: build test lint hygiene
+# Everything CI runs, after formatting the code so lint never fails on
+# formatting alone.
+check: fmt build test lint hygiene
+
+# Applies the formatters enabled in .golangci.yml, which lint (and CI) enforce.
+fmt:
+    go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{ golangci_version }} fmt
 
 build:
     go build ./...
