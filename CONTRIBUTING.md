@@ -12,6 +12,7 @@ through `go run` at pinned versions, so you don't need to install them.
 just check   # build, test, lint, hygiene: the same checks as CI
 just test    # tests only
 JIG_E2E=1 go test -run TestEndToEnd .   # real install and removal of examples/tools.yaml (sandboxed)
+JIG_E2E=1 JIG_E2E_JDK=1 go test -run TestEndToEnd .   # the same, including the JDK (a large download)
 ```
 
 On Windows, run the recipes from Git Bash or WSL.

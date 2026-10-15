@@ -68,7 +68,8 @@ See [examples/tools.yaml](examples/tools.yaml) for a complete manifest.
 | `jdk` | A Java Development Kit | Coursier (`cs`) | `jvm` (defaults to the name) |
 
 Each kind rejects fields it doesn't know, so typos fail validation. Removing a JDK only ever deletes
-its directory inside Coursier's cache.
+its directory and downloaded archive inside Coursier's caches. A JDK installed anywhere else is left in
+place, and the removal fails with an error that wraps `jig.ErrNotManaged`.
 
 ## Usage
 
@@ -123,7 +124,7 @@ go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml -chec
 |---|---|
 | v0.1 | Binaries: manifest, download and verify, safe extraction, Status / Plan / Apply, checksum updater |
 | v0.2 | Extras: five built-in kinds, custom kinds, `requires` ordering, removal |
-| v0.3 | Go 1.27, extra descriptions, running parent tools from PATH |
+| v0.3 | Go 1.27, extra descriptions, running parent tools from PATH, full JDK removal, shorter command errors |
 | v1.0 | Stable API |
 | v1.1 | Install record: remove tools dropped from the manifest, uninstall a single tool |
 

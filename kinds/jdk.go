@@ -23,7 +23,10 @@ import (
 //	jvm  the Coursier JVM selector (optional; defaults to the name)
 //
 // Removal deletes the JDK's directory, but only when it lies inside
-// Coursier's own cache.
+// Coursier's own cache. For a JDK unpacked from the archive cache it also
+// deletes the downloaded archive, which Coursier would otherwise unpack again.
+// A JDK elsewhere is left in place with an error that wraps
+// jig.ErrNotManaged.
 type JDK struct{}
 
 var _jdkFields = fields{optional: []string{"jvm"}}
@@ -68,12 +71,22 @@ func (h JDK) Remove(ctx context.Context, env jig.Env, e manifest.Extra) error {
 	if !d.Installed {
 		return fmt.Errorf("%s: %w", e.Name, jig.ErrNotInstalled)
 	}
-	dir, err := coursierJDKDir(env, d.Location)
+	dir, download, err := coursierJDKDir(env, d.Location)
 	if err != nil {
 		return fmt.Errorf("remove JDK %s: %w", e.Name, err)
 	}
 	if err := env.FS.Remove(dir); err != nil {
 		return fmt.Errorf("remove JDK %s at %s: %w", e.Name, dir, err)
+	}
+	if download == "" {
+		return nil
+	}
+	// Coursier marks a verified download with an empty ".<name>.checked" file.
+	checked := filepath.Join(filepath.Dir(download), "."+filepath.Base(download)+".checked")
+	for _, p := range []string{download, checked} {
+		if err := env.FS.Remove(p); err != nil {
+			return fmt.Errorf("remove JDK %s download %s: %w", e.Name, p, err)
+		}
 	}
 	return nil
 }
@@ -87,24 +100,29 @@ func jvmSelector(e manifest.Extra) string {
 
 // coursierJDKDir maps a JAVA_HOME reported by Coursier to the one directory
 // that holds that JDK: the first directory below the JVM cache, or the
-// archive-named directory inside the archive cache. Anything else is
-// refused.
-func coursierJDKDir(env jig.Env, javaHome string) (string, error) {
+// archive-named directory inside the archive cache. For the archive cache it
+// also returns the downloaded archive, which Coursier's download cache keeps
+// at the same relative path. Anything else is refused.
+func coursierJDKDir(env jig.Env, javaHome string) (dir, download string, err error) {
 	jvmCache, err := coursierCache(env, "COURSIER_JVM_CACHE", "jvm")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if dir, ok := firstBelow(env, jvmCache, javaHome); ok {
-		return dir, nil
+		return dir, "", nil
 	}
 	arcCache, err := coursierCache(env, "COURSIER_ARCHIVE_CACHE", "arc")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if dir, ok := archiveAncestor(env, arcCache, javaHome); ok {
-		return dir, nil
+	if rel, ok := archiveAncestor(env, arcCache, javaHome); ok {
+		downloads, err := coursierCache(env, "COURSIER_CACHE", "v1")
+		if err != nil {
+			return "", "", err
+		}
+		return filepath.Join(arcCache, rel), filepath.Join(downloads, rel), nil
 	}
-	return "", fmt.Errorf("java home %s is not inside Coursier's caches (%s, %s)", javaHome, jvmCache, arcCache)
+	return "", "", fmt.Errorf("java home %s is not inside Coursier's caches (%s, %s): %w", javaHome, jvmCache, arcCache, jig.ErrNotManaged)
 }
 
 // coursierCache returns one of Coursier's cache directories, honouring its
@@ -140,9 +158,9 @@ func firstBelow(env jig.Env, root, target string) (string, bool) {
 	return filepath.Join(root, first), true
 }
 
-// archiveAncestor returns the nearest ancestor of target, below root, whose
-// name is an archive file name (Coursier unpacks each archive into a
-// directory named after it).
+// archiveAncestor returns, relative to root, the nearest ancestor of target
+// below root whose name is an archive file name (Coursier unpacks each archive
+// into a directory named after it).
 func archiveAncestor(env jig.Env, root, target string) (string, bool) {
 	rel, ok := relativeInside(env, root, target)
 	if !ok {
@@ -150,7 +168,7 @@ func archiveAncestor(env jig.Env, root, target string) (string, bool) {
 	}
 	for current := rel; current != "." && current != ""; current = path.Dir(current) {
 		if isArchiveName(path.Base(current)) {
-			return filepath.Join(root, filepath.FromSlash(current)), true
+			return filepath.FromSlash(current), true
 		}
 	}
 	return "", false

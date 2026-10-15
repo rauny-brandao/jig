@@ -46,7 +46,11 @@ func TestEndToEnd(t *testing.T) {
 	if err := j.Validate(m); err != nil {
 		t.Fatalf("example manifest is invalid: %v", err)
 	}
-	const skipped = "temurin:25"
+	// The JDK is a large download, so it only runs with JIG_E2E_JDK=1.
+	skipped := "temurin:25"
+	if os.Getenv("JIG_E2E_JDK") == "1" {
+		skipped = ""
+	}
 	var names []string
 	order, err := m.Order()
 	if err != nil {
@@ -86,8 +90,27 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("uv tool executable not in the bin directory: %v", err)
 	}
 
-	removal := j.PlanRemove(installed, jig.RemoveOptions{})
-	results, err = j.Apply(t.Context(), removal, func(e jig.Event) {
+	// Extras are removed and checked while the tools that detect them are
+	// still installed, so an extra that comes back is noticed.
+	remove(t, j, j.PlanRemove(installed, jig.RemoveOptions{ExtrasOnly: true}))
+	remaining := status(t, j, m)
+	for _, s := range remaining {
+		if s.Kind != jig.KindTool && s.State.Installed() {
+			t.Errorf("%s still installed after removal", s.Name)
+		}
+	}
+
+	remove(t, j, j.PlanRemove(remaining, jig.RemoveOptions{}))
+	for _, s := range status(t, j, m) {
+		if s.State.Installed() {
+			t.Errorf("%s still installed after removal", s.Name)
+		}
+	}
+}
+
+func remove(t *testing.T, j *jig.Jig, plan jig.Plan) {
+	t.Helper()
+	results, err := j.Apply(t.Context(), plan, func(e jig.Event) {
 		t.Logf("%s %s %s", e.Type, e.Action.Op, e.Action.Name)
 	})
 	if err != nil {
@@ -95,11 +118,6 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if err := results.Err(); err != nil {
 		t.Fatalf("removal failed: %v", err)
-	}
-	for _, s := range status(t, j, m) {
-		if s.State.Installed() {
-			t.Errorf("%s still installed after removal", s.Name)
-		}
 	}
 }
 
