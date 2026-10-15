@@ -1,5 +1,8 @@
 # Contributing
 
+Bug reports and ideas are welcome as [issues](https://github.com/rauny-brandao/jig/issues). Pull
+requests are limited to collaborators. To report a security problem, see [SECURITY.md](SECURITY.md).
+
 ## Setup
 
 You need Go 1.26 or newer and [just](https://github.com/casey/just). golangci-lint and govulncheck run
