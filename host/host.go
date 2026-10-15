@@ -64,11 +64,12 @@ func (FS) Exists(path string) bool {
 }
 
 // Remove deletes path and everything below it; a missing path is not an
-// error.
-func (FS) Remove(path string) error { return os.RemoveAll(path) }
+// error. See RemoveAll for how it handles files in use on Windows.
+func (FS) Remove(path string) error { return RemoveAll(path) }
 
-// Rename moves oldpath to newpath, replacing an existing file.
-func (FS) Rename(oldpath, newpath string) error { return os.Rename(oldpath, newpath) }
+// Rename moves oldpath to newpath, replacing an existing file. See Rename
+// for how it handles files in use on Windows.
+func (FS) Rename(oldpath, newpath string) error { return Rename(oldpath, newpath) }
 
 // Chmod changes the mode of the named file.
 func (FS) Chmod(name string, mode fs.FileMode) error { return os.Chmod(name, mode) }
