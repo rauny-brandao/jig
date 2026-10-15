@@ -1,0 +1,97 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck        # Unchecked error return values.
+    - govet           # Official go vet suite.
+    - staticcheck     # Comprehensive static analysis.
+    - ineffassign     # Assignments whose value is never read.
+    - unused          # Unused identifiers (functions, types, vars).
+
+    # Error handling
+    - errorlint       # Incorrect errors.Is / errors.As usage.
+    - nilerr          # Returning nil when a non-nil error was received.
+    - nilnil          # Returning (nil, nil) from a (T, error) function.
+
+    # Safety
+    - forcetypeassert # Unsafe x.(T) type assertions.
+    - bodyclose       # Unclosed HTTP response bodies.
+
+    # Switch completeness
+    - exhaustive      # Switch on enum type must cover all values.
+
+    # Documentation and style
+    - misspell        # Common English typos in comments and strings.
+    - revive          # Naming, docs, and style rules.
+    - nolintlint      # nolint comments must name the linter and explain why.
+
+    # Modernization
+    - modernize       # Suggests modern Go features.
+
+    # Licensing
+    - goheader        # Every Go file carries the MPL-2.0 header (copyleft is per file).
+
+    # Architecture
+    - depguard        # Keeps the pure packages free of third-party and I/O imports.
+
+  settings:
+    depguard:
+      rules:
+        # manifest and version are imported by programs whose core may only
+        # depend on the standard library and must not do I/O. Keep that true.
+        pure-packages:
+          list-mode: strict
+          files:
+            - "**/manifest/*.go"
+            - "**/version/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+          deny:
+            - pkg: os
+              desc: manifest and version must not touch the filesystem or environment
+            - pkg: net
+              desc: manifest and version must not use the network
+            - pkg: io/ioutil
+              desc: manifest and version must not do I/O
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    goheader:
+      template: |-
+        This Source Code Form is subject to the terms of the Mozilla Public
+        License, v. 2.0. If a copy of the MPL was not distributed with this
+        file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    revive:
+      severity: warning
+      confidence: 0.8
+      rules:
+        - name: dot-imports
+        - name: error-return
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: redefines-builtin-id
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

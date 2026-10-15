@@ -1,0 +1,194 @@
+# Example jig manifest using public tools. It covers every asset layout:
+# zip and tar.gz archives (gh), raw binaries (jq), extra binaries (uv),
+# gzip-compressed binaries (cs), and every built-in extra kind.
+#
+# Checksums are filled in by: go run ./cmd/jig-checksums -f examples/tools.yaml
+tools:
+  gh:
+    version: "2.102.0"
+    description: "GitHub CLI"
+    platforms:
+      darwin_arm64:
+        url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_macOS_arm64.zip"
+        archive_format: zip
+        binary_name: gh
+        binary_path: "gh_{version}_macOS_arm64/bin/gh"
+        sha256: "da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e"
+      darwin_amd64:
+        url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_macOS_amd64.zip"
+        archive_format: zip
+        binary_name: gh
+        binary_path: "gh_{version}_macOS_amd64/bin/gh"
+        sha256: "b245f24eb2bf5f75b426b4c26da3651a107f8d5b6f4fddfbfccc5679041378b3"
+      linux_amd64:
+        url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_linux_amd64.tar.gz"
+        archive_format: tar.gz
+        binary_name: gh
+        binary_path: "gh_{version}_linux_amd64/bin/gh"
+        sha256: "bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
+      linux_arm64:
+        url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_linux_arm64.tar.gz"
+        archive_format: tar.gz
+        binary_name: gh
+        binary_path: "gh_{version}_linux_arm64/bin/gh"
+        sha256: "7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484"
+      windows_amd64:
+        url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_windows_amd64.zip"
+        archive_format: zip
+        binary_name: gh.exe
+        binary_path: "bin/gh.exe"
+        sha256: "ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b86067f4"
+    verify_command: ["gh", "version"]
+    verify_pattern: "gh version {version}"
+  jq:
+    version: "1.8.2"
+    description: "Command-line JSON processor"
+    platforms:
+      darwin_arm64:
+        url: "https://github.com/jqlang/jq/releases/download/jq-{version}/jq-macos-arm64"
+        archive_format: binary
+        binary_name: jq
+        sha256: "2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e"
+      darwin_amd64:
+        url: "https://github.com/jqlang/jq/releases/download/jq-{version}/jq-macos-amd64"
+        archive_format: binary
+        binary_name: jq
+        sha256: "e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0"
+      linux_amd64:
+        url: "https://github.com/jqlang/jq/releases/download/jq-{version}/jq-linux-amd64"
+        archive_format: binary
+        binary_name: jq
+        sha256: "b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f"
+      linux_arm64:
+        url: "https://github.com/jqlang/jq/releases/download/jq-{version}/jq-linux-arm64"
+        archive_format: binary
+        binary_name: jq
+        sha256: "8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309"
+      windows_amd64:
+        url: "https://github.com/jqlang/jq/releases/download/jq-{version}/jq-windows-amd64.exe"
+        archive_format: binary
+        binary_name: jq.exe
+        sha256: "a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627"
+    verify_command: ["jq", "--version"]
+    verify_pattern: "jq-{version}"
+  uv:
+    version: "0.13.1"
+    description: "Python package and project manager"
+    platforms:
+      darwin_arm64:
+        url: "https://github.com/astral-sh/uv/releases/download/{version}/uv-aarch64-apple-darwin.tar.gz"
+        archive_format: tar.gz
+        binary_name: uv
+        binary_path: "uv-aarch64-apple-darwin/uv"
+        extra_binaries: ["uv-aarch64-apple-darwin/uvx"]
+        sha256: "cfe454573412ff7380d15fc7dae5997ab53ffce72fce0a78e91ddbc84001acd2"
+      darwin_amd64:
+        url: "https://github.com/astral-sh/uv/releases/download/{version}/uv-x86_64-apple-darwin.tar.gz"
+        archive_format: tar.gz
+        binary_name: uv
+        binary_path: "uv-x86_64-apple-darwin/uv"
+        extra_binaries: ["uv-x86_64-apple-darwin/uvx"]
+        sha256: "bb7b805bdcf3d0bc8c74ceb94569e6b3e8aa35bd492acdbb9d46bf46d9d4ff6b"
+      linux_amd64:
+        url: "https://github.com/astral-sh/uv/releases/download/{version}/uv-x86_64-unknown-linux-gnu.tar.gz"
+        archive_format: tar.gz
+        binary_name: uv
+        binary_path: "uv-x86_64-unknown-linux-gnu/uv"
+        extra_binaries: ["uv-x86_64-unknown-linux-gnu/uvx"]
+        sha256: "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220"
+      linux_arm64:
+        url: "https://github.com/astral-sh/uv/releases/download/{version}/uv-aarch64-unknown-linux-gnu.tar.gz"
+        archive_format: tar.gz
+        binary_name: uv
+        binary_path: "uv-aarch64-unknown-linux-gnu/uv"
+        extra_binaries: ["uv-aarch64-unknown-linux-gnu/uvx"]
+        sha256: "9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14"
+      windows_amd64:
+        url: "https://github.com/astral-sh/uv/releases/download/{version}/uv-x86_64-pc-windows-msvc.zip"
+        archive_format: zip
+        binary_name: uv.exe
+        extra_binaries: ["uvx.exe"]
+        sha256: "3b2661a463a5baea7f5076ea2b25ab71d77f36a6c0d809e5350651792f80a672"
+    verify_command: ["uv", "--version"]
+    verify_pattern: "uv {version}"
+  fnm:
+    version: "1.39.0"
+    description: "Fast Node.js version manager"
+    platforms:
+      darwin_arm64:
+        url: "https://github.com/Schniz/fnm/releases/download/v{version}/fnm-macos.zip"
+        archive_format: zip
+        binary_name: fnm
+        sha256: "f046483e85c53b3278efe49a3620c8680f22efa58a8dabfd03eafc6b59b31a25"
+      darwin_amd64:
+        url: "https://github.com/Schniz/fnm/releases/download/v{version}/fnm-macos.zip"
+        archive_format: zip
+        binary_name: fnm
+        sha256: "f046483e85c53b3278efe49a3620c8680f22efa58a8dabfd03eafc6b59b31a25"
+      linux_amd64:
+        url: "https://github.com/Schniz/fnm/releases/download/v{version}/fnm-linux.zip"
+        archive_format: zip
+        binary_name: fnm
+        sha256: "7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224"
+      linux_arm64:
+        url: "https://github.com/Schniz/fnm/releases/download/v{version}/fnm-arm64.zip"
+        archive_format: zip
+        binary_name: fnm
+        sha256: "4eaff58b2c5bf30d0934027572dd0b5bbb60d2a1af309230b53662d4b1d45599"
+      windows_amd64:
+        url: "https://github.com/Schniz/fnm/releases/download/v{version}/fnm-windows.zip"
+        archive_format: zip
+        binary_name: fnm.exe
+        sha256: "8183bed4348cb78fdfd8abb3d1247fbeab7b2082f941363929c61e747c001e10"
+    verify_command: ["fnm", "--version"]
+    verify_pattern: "fnm {version}"
+  cs:
+    version: "2.1.24"
+    description: "Coursier, the Scala and JVM artifact fetcher"
+    platforms:
+      darwin_arm64:
+        url: "https://github.com/coursier/coursier/releases/download/v{version}/cs-aarch64-apple-darwin.gz"
+        archive_format: gz
+        binary_name: cs
+        binary_path: "cs-aarch64-apple-darwin"
+        sha256: "53a5728c2016118c8296fa7d5678ddfe122e22dc6c36deb554d771b3b9295b4f"
+      darwin_amd64:
+        url: "https://github.com/coursier/coursier/releases/download/v{version}/cs-x86_64-apple-darwin.gz"
+        archive_format: gz
+        binary_name: cs
+        binary_path: "cs-x86_64-apple-darwin"
+        sha256: "33913cd6b61658035d9e6fe971e919cb0ef1f659aa7bff7deeded963a2d36385"
+      linux_amd64:
+        url: "https://github.com/coursier/coursier/releases/download/v{version}/cs-x86_64-pc-linux.gz"
+        archive_format: gz
+        binary_name: cs
+        binary_path: "cs-x86_64-pc-linux"
+        sha256: "d2c0572a17fb6146ea65349b59dd216b38beff60ae22bce6e549867c6ed2eda6"
+      windows_amd64:
+        url: "https://github.com/coursier/coursier/releases/download/v{version}/cs-x86_64-pc-win32.zip"
+        archive_format: zip
+        binary_name: cs.exe
+        binary_path: "cs-x86_64-pc-win32.exe"
+        sha256: "c16b4f95b59fbe035cdda4353cfca78befcbbef5a20a3b151c679717c1504c9f"
+    verify_command: ["cs", "version"]
+# Extras are installed through the tools above, after what they require.
+extras:
+  - kind: gh-extension
+    name: branch
+    repo: mislav/gh-branch
+    requires: [gh]
+  - kind: uv-tool
+    name: cowsay
+    source: "cowsay==6.1"
+    requires: [uv]
+  - kind: node-runtime
+    name: node
+    channel: lts-latest
+    requires: [fnm]
+  - kind: npm-global
+    name: semver
+    version: "7.8.5"
+    requires: [node]
+  - kind: jdk
+    name: "temurin:25"
+    requires: [cs]

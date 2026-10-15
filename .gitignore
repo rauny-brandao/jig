@@ -1,0 +1,9 @@
+# Local forbidden-strings patterns; never committed (see CONTRIBUTING.md).
+/.forbidden-patterns
+
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+.DS_Store
