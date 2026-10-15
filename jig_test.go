@@ -137,7 +137,7 @@ func TestStatusReportsEachState(t *testing.T) {
 	}
 	want := map[string]string{
 		"current":  "ok 2.0.0",
-		"newer":    "ok 2.1.0",
+		"newer":    "newer 2.1.0",
 		"old":      "outdated 1.9.9",
 		"absent":   "missing ",
 		"broken":   "missing ",
@@ -151,6 +151,48 @@ func TestStatusReportsEachState(t *testing.T) {
 	}
 	if !slices.IsSorted(names) {
 		t.Errorf("statuses not sorted by name: %v", names)
+	}
+}
+
+func TestStatusComparesToolVersions(t *testing.T) {
+	tests := []struct {
+		have, want string
+		state      jig.State
+	}{
+		{"1.2.3", "1.2.3", jig.StateOK},
+		{"1.2.4", "1.2.3", jig.StateNewer},
+		{"2.0.0", "1.9.9", jig.StateNewer},
+		{"1.2.2", "1.2.3", jig.StateOutdated},
+		{"1.2.3-rc.1", "1.2.3", jig.StateOutdated},
+		{"1.2.3", "1.2.3-rc.1", jig.StateNewer},
+		{"v1.2.3", "1.2.3", jig.StateOK},
+		{"1.2.3", "v1.2.3", jig.StateOK},
+		{"1.2.3+build.7", "1.2.3", jig.StateOK},
+		{"v1.2.4", "1.2.3", jig.StateNewer},
+		{"anything", "", jig.StateOK},
+		{"1.2", "1.2", jig.StateOK},
+		{"1.3", "1.2", jig.StateOutdated},
+		{"1.2", "1.2.0", jig.StateOutdated},
+		{"2.0.0", "nightly", jig.StateOutdated},
+	}
+	for _, tt := range tests {
+		t.Run(tt.have+" vs "+tt.want, func(t *testing.T) {
+			env := jigtest.NewEnv()
+			j := newJig(t, env, _linux)
+			tool := archiveTool(env, "x", "1.0.0")
+			tool.Version = tt.want
+			tool.VerifyPattern = "x {version}"
+			env.FS.Seed(filepath.Join(_dirs.Bin, "x"), []byte("x"), 0o755)
+			env.Runner.Stub(jig.CommandResult{Stdout: "x " + tt.have + "\n"}, filepath.Join(_dirs.Bin, "x"), "--version")
+
+			statuses, err := j.Status(t.Context(), manifestOf(map[string]manifest.Tool{"x": tool}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s := statuses[0]; s.State != tt.state || s.Have != tt.have {
+				t.Errorf("state = %s, have %q; want %s, have %q", s.State, s.Have, tt.state, tt.have)
+			}
+		})
 	}
 }
 
@@ -197,6 +239,9 @@ func TestPlan(t *testing.T) {
 		{Name: "b", Kind: jig.KindTool, State: jig.StateOutdated, Have: "0.9.0", Want: "1.0.0"},
 		{Name: "c", Kind: jig.KindTool, State: jig.StateOK, Have: "1.0.0", Want: "1.0.0"},
 		{Name: "d", Kind: jig.KindTool, State: jig.StateUnsupported, Want: "1.0.0"},
+		{Name: "e", Kind: jig.KindTool, State: jig.StateNewer, Have: "1.1.0", Want: "1.0.0"},
+		{Name: "f", Kind: "npm", State: jig.StateNewer, Have: "2.1.0", Want: "2.0.0"},
+		{Name: "g", Kind: "npm", State: jig.StateMissing, Want: "3.0.0"},
 	}
 	j := newJig(t, jigtest.NewEnv(), _linux)
 
@@ -205,9 +250,25 @@ func TestPlan(t *testing.T) {
 		opts jig.PlanOptions
 		want []string
 	}{
-		{"default", jig.PlanOptions{}, []string{"install a", "upgrade b 0.9.0->1.0.0"}},
-		{"force", jig.PlanOptions{Force: true}, []string{"install a", "upgrade b 0.9.0->1.0.0", "reinstall c 1.0.0->1.0.0"}},
-		{"only", jig.PlanOptions{Only: []string{"b", "d"}}, []string{"upgrade b 0.9.0->1.0.0"}},
+		{"default", jig.PlanOptions{}, []string{"install a", "upgrade b 0.9.0->1.0.0", "install g"}},
+		{"force", jig.PlanOptions{Force: true}, []string{
+			"install a", "upgrade b 0.9.0->1.0.0", "reinstall c 1.0.0->1.0.0",
+			"downgrade e 1.1.0->1.0.0", "downgrade f 2.1.0->2.0.0", "install g",
+		}},
+		{"select named", jig.PlanOptions{Select: jig.Named("b", "d")}, []string{"upgrade b 0.9.0->1.0.0"}},
+		{"select of kind", jig.PlanOptions{Select: jig.OfKind("npm")}, []string{"install g"}},
+		{"select func", jig.PlanOptions{Select: func(s jig.Status) bool { return s.Name > "f" }}, []string{"install g"}},
+		{"select no names", jig.PlanOptions{Select: jig.Named()}, nil},
+		{"select no kinds", jig.PlanOptions{Select: jig.OfKind(), Force: true}, nil},
+		{"downgrade", jig.PlanOptions{Downgrade: jig.Named("e", "c")}, []string{
+			"install a", "upgrade b 0.9.0->1.0.0", "downgrade e 1.1.0->1.0.0", "install g",
+		}},
+		{"downgrade with force", jig.PlanOptions{Downgrade: jig.OfKind("npm"), Force: true}, []string{
+			"install a", "upgrade b 0.9.0->1.0.0", "reinstall c 1.0.0->1.0.0",
+			"downgrade e 1.1.0->1.0.0", "downgrade f 2.1.0->2.0.0", "install g",
+		}},
+		{"downgrade outside select", jig.PlanOptions{Select: jig.OfKind("npm"), Downgrade: jig.Named("e")}, []string{"install g"}},
+		{"downgrade nothing", jig.PlanOptions{Downgrade: jig.Named()}, []string{"install a", "upgrade b 0.9.0->1.0.0", "install g"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,8 +285,56 @@ func TestPlan(t *testing.T) {
 			}
 		})
 	}
-	if !j.Plan(statuses[2:], jig.PlanOptions{}).Empty() {
-		t.Error("plan for up-to-date and unsupported items is not empty")
+	if !j.Plan(statuses[2:6], jig.PlanOptions{}).Empty() {
+		t.Error("plan for up-to-date, newer and unsupported items is not empty")
+	}
+}
+
+func TestFilters(t *testing.T) {
+	tool := jig.Status{Name: "gh", Kind: jig.KindTool}
+	extra := jig.Status{Name: "branch", Kind: "gh-extension"}
+
+	tests := []struct {
+		name        string
+		filter      jig.Filter
+		tool, extra bool
+	}{
+		{"Named()", jig.Named(), false, false},
+		{"Named(gh)", jig.Named("gh"), true, false},
+		{"Named(gh, branch)", jig.Named("gh", "branch"), true, true},
+		{"Named(other)", jig.Named("other"), false, false},
+		{"OfKind()", jig.OfKind(), false, false},
+		{"OfKind(tool)", jig.OfKind(jig.KindTool), true, false},
+		{"OfKind(tool, gh-extension)", jig.OfKind(jig.KindTool, "gh-extension"), true, true},
+	}
+	for _, tt := range tests {
+		if got := tt.filter(tool); got != tt.tool {
+			t.Errorf("%s(gh) = %v, want %v", tt.name, got, tt.tool)
+		}
+		if got := tt.filter(extra); got != tt.extra {
+			t.Errorf("%s(branch) = %v, want %v", tt.name, got, tt.extra)
+		}
+	}
+
+	names := []string{"gh"}
+	filter := jig.Named(names...)
+	names[0] = "branch"
+	if !filter(tool) || filter(extra) {
+		t.Error("Named changed with the caller's slice")
+	}
+}
+
+func TestStateInstalled(t *testing.T) {
+	for state, want := range map[jig.State]bool{
+		jig.StateOK:          true,
+		jig.StateNewer:       true,
+		jig.StateOutdated:    true,
+		jig.StateMissing:     false,
+		jig.StateUnsupported: false,
+	} {
+		if got := state.Installed(); got != want {
+			t.Errorf("%s.Installed() = %v, want %v", state, got, want)
+		}
 	}
 }
 
@@ -630,6 +739,58 @@ func TestStatusAfterApplyIsOK(t *testing.T) {
 	}
 	if !j.Plan(statuses, jig.PlanOptions{}).Empty() {
 		t.Error("plan after install is not empty")
+	}
+}
+
+func TestApplyDowngradesANewerTool(t *testing.T) {
+	env := jigtest.NewEnv()
+	var hooked []jig.Installed
+	j := newJig(t, env, _linux, jig.WithPostInstall("gh", func(_ context.Context, in jig.Installed) error {
+		hooked = append(hooked, in)
+		return nil
+	}))
+	m := manifestOf(map[string]manifest.Tool{"gh": archiveTool(env, "gh", "2.0.0"), "jq": archiveTool(env, "jq", "1.0.0")})
+	stubInstalled(env, filepath.Join(_dirs.Bin, "gh"), "gh", "2.1.0")
+	stubInstalled(env, filepath.Join(_dirs.Bin, "jq"), "jq", "1.5.0")
+	statuses, err := j.Status(t.Context(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stateOf(statuses); got["gh"] != "newer 2.1.0" || got["jq"] != "newer 1.5.0" {
+		t.Fatalf("states = %v, want gh and jq newer", got)
+	}
+	if !j.Plan(statuses, jig.PlanOptions{}).Empty() {
+		t.Fatal("default plan touches newer tools")
+	}
+
+	plan := j.Plan(statuses, jig.PlanOptions{Downgrade: jig.Named("gh")})
+	if len(plan.Actions) != 1 || plan.Actions[0].Op != jig.OpDowngrade || plan.Actions[0].Name != "gh" ||
+		plan.Actions[0].From != "2.1.0" || plan.Actions[0].To != "2.0.0" {
+		t.Fatalf("plan = %+v, want one downgrade of gh from 2.1.0 to 2.0.0", plan.Actions)
+	}
+	var events []jig.Event
+	results, err := j.Apply(t.Context(), plan, func(e jig.Event) { events = append(events, e) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := results.Err(); err != nil {
+		t.Fatalf("downgrade failed: %v", err)
+	}
+
+	assertBinary(t, env, filepath.Join(_dirs.Bin, "gh"), "gh binary 2.0.0")
+	if data, _, _ := env.FS.File(filepath.Join(_dirs.Bin, "jq")); string(data) != "installed" {
+		t.Errorf("jq was changed: %q", data)
+	}
+	if got := eventTypes(events); !slices.Equal(got, []string{"started gh", "succeeded gh"}) {
+		t.Errorf("events = %v", got)
+	}
+	for _, e := range events {
+		if e.Action.Op != jig.OpDowngrade {
+			t.Errorf("event %s op = %s, want downgrade", e.Type, e.Action.Op)
+		}
+	}
+	if len(hooked) != 1 || hooked[0].Version != "2.0.0" {
+		t.Errorf("post-install hook got %+v, want gh at 2.0.0", hooked)
 	}
 }
 

@@ -47,27 +47,6 @@ func TestCompareFollowsSemverPrecedence(t *testing.T) {
 	}
 }
 
-func TestAtLeast(t *testing.T) {
-	tests := []struct {
-		have, want string
-		ok         bool
-	}{
-		{"2.1.0", "2.1.0", true},
-		{"2.2.0", "2.1.0", true},
-		{"v2.1.0", "2.1.0", true},
-		{"2.0.9", "2.1.0", false},
-		{"2.1.0-rc.1", "2.1.0", false},
-		{"", "2.1.0", false},
-		{"garbage", "2.1.0", false},
-		{"2.1.0", "garbage", false},
-	}
-	for _, tt := range tests {
-		if got := version.AtLeast(tt.have, tt.want); got != tt.ok {
-			t.Errorf("AtLeast(%q, %q) = %v, want %v", tt.have, tt.want, got, tt.ok)
-		}
-	}
-}
-
 func TestFromOutput(t *testing.T) {
 	tests := []struct {
 		name, output, pattern, want string

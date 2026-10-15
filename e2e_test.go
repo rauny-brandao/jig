@@ -51,19 +51,10 @@ func TestEndToEnd(t *testing.T) {
 	if os.Getenv("JIG_E2E_JDK") == "1" {
 		skipped = ""
 	}
-	var names []string
-	order, err := m.Order()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range order {
-		if name != skipped {
-			names = append(names, name)
-		}
-	}
+	selected := func(s jig.Status) bool { return s.Name != skipped }
 
 	before := status(t, j, m)
-	results, err := j.Apply(t.Context(), j.Plan(before, jig.PlanOptions{Only: names}), func(e jig.Event) {
+	results, err := j.Apply(t.Context(), j.Plan(before, jig.PlanOptions{Select: selected}), func(e jig.Event) {
 		t.Logf("%s %s %s", e.Type, e.Action.Op, e.Action.Name)
 	})
 	if err != nil {
@@ -83,7 +74,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		t.Logf("%-10s %-12s %s", s.Name, s.Kind, s.Have)
 	}
-	if !j.Plan(installed, jig.PlanOptions{Only: names}).Empty() {
+	if !j.Plan(installed, jig.PlanOptions{Select: selected}).Empty() {
 		t.Error("a second install plan is not empty")
 	}
 	if _, err := os.Stat(filepath.Join(dirs.Bin, executable(platform, "cowsay"))); err != nil {
