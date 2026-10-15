@@ -4,7 +4,7 @@ jig is a Go library for installing pinned, checksum-verified developer tools fro
 manifest, along with the extras those tools manage: CLI extensions, language runtimes, global
 packages.
 
-> **Status:** v0.3, pre-release. The API may change until v1.0.
+> **Status:** v0.4, pre-release. The API may change until v1.0.
 
 ## Why jig
 
@@ -80,7 +80,7 @@ j, _ := jig.New(host.Deps(), jig.Dirs{Base: root, Bin: bin, Cache: cache, Home: 
     manifest.Current(), jig.WithHandlers(kinds.Defaults()...))
 if err := j.Validate(m); err != nil { … }
 
-statuses, _ := j.Status(ctx, m)                       // ok, missing, outdated or unsupported, per item
+statuses, _ := j.Status(ctx, m)                       // ok, newer, missing, outdated or unsupported, per item
 plan := j.Plan(statuses, jig.PlanOptions{})           // no side effects: print it for a dry run
 results, _ := j.Apply(ctx, plan, func(e jig.Event) {  // dependency order, parallel where possible
     fmt.Println(e.Type, e.Action.Name)
@@ -89,6 +89,22 @@ if err := results.Err(); err != nil { … }
 
 teardown := j.PlanRemove(statuses, jig.RemoveOptions{}) // reverse dependency order
 ```
+
+Plan options:
+- `Select` limits the plan to some items, with `jig.Named("gh", "jq")`, `jig.OfKind(jig.KindTool)` or any
+  `func(jig.Status) bool`. Nil means every item; `Named()` and `OfKind()` with no arguments match nothing.
+  `RemoveOptions.Select` does the same for removals.
+- `Force` reinstalls items that are already installed at the pin, and downgrades newer ones to it.
+- `Downgrade` picks which items newer than their pin are replaced with the pinned version, for exact pins:
+
+  ```go
+  plan := j.Plan(statuses, jig.PlanOptions{Downgrade: jig.OfKind("npm-global")})
+  ```
+
+  Newer items it doesn't match are left alone, as are all of them when it is nil.
+
+Versions are compared as semantic versions, so `v1.2.3` and `1.2.3` are the same version. A version that
+isn't semantic counts as outdated unless it equals the pin exactly.
 
 Options:
 - `jig.WithPostInstall(name, hook)` runs your own step after a tool or extra installs.
@@ -125,6 +141,7 @@ go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml -chec
 | v0.1 | Binaries: manifest, download and verify, safe extraction, Status / Plan / Apply, checksum updater |
 | v0.2 | Extras: five built-in kinds, custom kinds, `requires` ordering, removal |
 | v0.3 | Go 1.27, extra descriptions, running parent tools from PATH, full JDK removal, shorter command errors |
+| v0.4 | Plan filters (`Select`, `Named`, `OfKind`), versions newer than the pin reported and optionally downgraded |
 | v1.0 | Stable API |
 | v1.1 | Install record: remove tools dropped from the manifest, uninstall a single tool |
 

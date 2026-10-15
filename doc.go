@@ -9,4 +9,11 @@
 // jig is a library: it does no I/O of its own beyond the small interfaces a
 // caller provides, so it can be embedded in other CLIs and tested with
 // in-memory fakes.
+//
+// Status reports the State of every item without changing the machine. Plan
+// turns statuses into actions: missing items are installed and outdated ones
+// upgraded, while items newer than their pin are left alone unless
+// PlanOptions.Downgrade selects them. A Filter such as Named or OfKind
+// narrows a plan to some items. Apply carries the plan out in dependency
+// order.
 package jig

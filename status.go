@@ -27,12 +27,18 @@ type State string
 
 // Item states.
 const (
-	// StateOK means the installed version is the pinned one or newer.
+	// StateOK means the pinned version is installed, or the item is
+	// installed and has no pin, or its handler reports no version.
 	StateOK State = "ok"
+	// StateNewer means a version newer than the pinned one is installed.
+	// Plan leaves it alone, like StateOK, unless PlanOptions.Downgrade
+	// selects it.
+	StateNewer State = "newer"
 	// StateMissing means the item is not installed, or its version could
 	// not be read.
 	StateMissing State = "missing"
-	// StateOutdated means an older version is installed.
+	// StateOutdated means an older version is installed, or one that
+	// differs from the pin and cannot be compared with it.
 	StateOutdated State = "outdated"
 	// StateUnsupported means the item does not apply to this platform, or
 	// requires an item that does not.
@@ -40,7 +46,9 @@ const (
 )
 
 // Installed reports whether the item is on the machine, at any version.
-func (s State) Installed() bool { return s == StateOK || s == StateOutdated }
+func (s State) Installed() bool {
+	return s == StateOK || s == StateNewer || s == StateOutdated
+}
 
 // Status is the state of one manifest item on this machine.
 type Status struct {
@@ -132,12 +140,26 @@ func (j *Jig) toolStatus(ctx context.Context, name string, tool manifest.Tool) S
 }
 
 // compare turns an installed and a wanted version into a state. With no
-// wanted version, any installed version is OK.
+// wanted version, any installed version is OK. Versions are compared as
+// semantic versions, so "v1.2.3", "1.2.3" and "1.2.3+build" are the same;
+// versions that differ as text and are not both semantic versions are
+// outdated.
 func compare(have, want string) State {
-	switch {
-	case have == "":
+	if have == "" {
 		return StateMissing
-	case want == "" || have == want || version.AtLeast(have, want):
+	}
+	if want == "" || have == want {
+		return StateOK
+	}
+	h, hErr := version.Parse(have)
+	w, wErr := version.Parse(want)
+	if hErr != nil || wErr != nil {
+		return StateOutdated
+	}
+	switch c := h.Compare(w); {
+	case c > 0:
+		return StateNewer
+	case c == 0:
 		return StateOK
 	default:
 		return StateOutdated

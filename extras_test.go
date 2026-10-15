@@ -198,7 +198,10 @@ func TestStatusComparesExtraVersions(t *testing.T) {
 	stubInstalled(env, filepath.Join(_dirs.Bin, "fnm"), "fnm", "1.0.0")
 	f.runtime.installed["node"] = "22.1.0"
 
-	for have, want := range map[string]jig.State{"4.9.9": jig.StateOutdated, "5.0.0": jig.StateOK, "5.1.0": jig.StateOK, "": jig.StateOK} {
+	for have, want := range map[string]jig.State{
+		"4.9.9": jig.StateOutdated, "5.0.0": jig.StateOK, "5.1.0": jig.StateNewer, "": jig.StateOK,
+		"v5.0.0": jig.StateOK, "5.0.0+build.1": jig.StateOK, "v5.0.1": jig.StateNewer, "5.0.0-beta.1": jig.StateOutdated,
+	} {
 		f.npm.installed["typescript"] = have
 		statuses, err := j.Status(t.Context(), m)
 		if err != nil {
@@ -313,6 +316,7 @@ func TestPlanExtras(t *testing.T) {
 		{Name: "fnm", Kind: jig.KindTool, State: jig.StateMissing},
 		{Name: "node", Kind: "runtime", State: jig.StateMissing, Extra: manifest.Extra{Name: "node", Requires: []string{"fnm"}}},
 		{Name: "app", Kind: "uv", State: jig.StateOK, Extra: always},
+		{Name: "app2", Kind: "uv", State: jig.StateNewer, Have: "2.0.0", Want: "1.0.0", Extra: manifest.Extra{Name: "app2", Reinstall: manifest.ReinstallAlways}},
 	}
 
 	plan := j.Plan(statuses, jig.PlanOptions{})
@@ -320,7 +324,7 @@ func TestPlanExtras(t *testing.T) {
 	for _, a := range plan.Actions {
 		got = append(got, string(a.Op)+" "+a.Name)
 	}
-	if want := []string{"install fnm", "install node", "reinstall app"}; !slices.Equal(got, want) {
+	if want := []string{"install fnm", "install node", "reinstall app", "downgrade app2"}; !slices.Equal(got, want) {
 		t.Errorf("Plan() = %v, want %v", got, want)
 	}
 	for _, a := range plan.Actions {
@@ -329,9 +333,15 @@ func TestPlanExtras(t *testing.T) {
 		}
 	}
 
-	only := j.Plan(statuses, jig.PlanOptions{Only: []string{"node"}})
-	if len(only.Actions) != 1 || !errors.Is(only.Actions[0].Blocked, jig.ErrRequirementMissing) {
-		t.Errorf("node without fnm = %+v, want blocked by its missing requirement", only.Actions)
+	for name, selected := range map[string]jig.Filter{"Named": jig.Named("node"), "OfKind": jig.OfKind("runtime")} {
+		only := j.Plan(statuses, jig.PlanOptions{Select: selected})
+		if len(only.Actions) != 1 || only.Actions[0].Name != "node" || !errors.Is(only.Actions[0].Blocked, jig.ErrRequirementMissing) {
+			t.Errorf("%s: node without fnm = %+v, want blocked by its missing requirement", name, only.Actions)
+		}
+	}
+	withFnm := j.Plan(statuses, jig.PlanOptions{Select: jig.Named("node", "fnm")})
+	if len(withFnm.Actions) != 2 || withFnm.Actions[1].Blocked != nil {
+		t.Errorf("node with fnm = %+v, want both planned and unblocked", withFnm.Actions)
 	}
 }
 
@@ -408,7 +418,7 @@ func TestApplyFailsBlockedActionsWithoutRunningThem(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := j.Apply(t.Context(), j.Plan(statuses, jig.PlanOptions{Only: []string{"node"}}), nil)
+	results, err := j.Apply(t.Context(), j.Plan(statuses, jig.PlanOptions{Select: jig.Named("node")}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,6 +549,96 @@ func TestPlanRemoveTearsDownInReverseOrder(t *testing.T) {
 	}
 	if len(f.runtime.installed) != 0 || len(f.npm.installed) != 0 {
 		t.Errorf("extras left: %v %v", f.runtime.installed, f.npm.installed)
+	}
+}
+
+func TestPlanRemoveSelectsItems(t *testing.T) {
+	env := jigtest.NewEnv()
+	f := newFakes()
+	j := newJig(t, env, _linux, f.option())
+	stubInstalled(env, filepath.Join(_dirs.Bin, "gh"), "gh", "2.0.0")
+	stubInstalled(env, filepath.Join(_dirs.Bin, "fnm"), "fnm", "1.0.0")
+	f.runtime.installed["node"] = ""
+	f.npm.installed["typescript"] = "5.1.0"
+	f.ext.installed["stack"] = ""
+	statuses, err := j.Status(t.Context(), extrasManifest(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		opts jig.RemoveOptions
+		want []string
+	}{
+		{"all", jig.RemoveOptions{}, []string{"fnm", "gh", "node", "stack", "typescript"}},
+		{"extras only", jig.RemoveOptions{ExtrasOnly: true}, []string{"node", "stack", "typescript"}},
+		{"named", jig.RemoveOptions{Select: jig.Named("node", "fnm")}, []string{"fnm", "node"}},
+		{"named extras only", jig.RemoveOptions{Select: jig.Named("node", "fnm"), ExtrasOnly: true}, []string{"node"}},
+		{"of kind", jig.RemoveOptions{Select: jig.OfKind("npm")}, []string{"typescript"}},
+		{"tools, extras only", jig.RemoveOptions{Select: jig.OfKind(jig.KindTool), ExtrasOnly: true}, nil},
+		{"no names", jig.RemoveOptions{Select: jig.Named()}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, a := range j.PlanRemove(statuses, tt.opts).Actions {
+				got = append(got, a.Name)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("PlanRemove() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyDowngradesANewerExtra(t *testing.T) {
+	env := jigtest.NewEnv()
+	f := newFakes()
+	j := newJig(t, env, _linux, f.option())
+	m := extrasManifest(env)
+	stubInstalled(env, filepath.Join(_dirs.Bin, "gh"), "gh", "2.0.0")
+	stubInstalled(env, filepath.Join(_dirs.Bin, "fnm"), "fnm", "1.0.0")
+	f.runtime.installed["node"] = "22.1.0"
+	f.npm.installed["typescript"] = "5.1.0"
+	f.ext.installed["stack"] = ""
+	statuses, err := j.Status(t.Context(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stateOf(statuses)["typescript"]; got != "newer 5.1.0" {
+		t.Fatalf("typescript = %q, want newer 5.1.0", got)
+	}
+	if plan := j.Plan(statuses, jig.PlanOptions{}); !plan.Empty() {
+		t.Fatalf("default plan = %+v, want newer extras left alone", plan.Actions)
+	}
+	if plan := j.Plan(statuses, jig.PlanOptions{Downgrade: jig.OfKind("runtime", "ext", jig.KindTool)}); !plan.Empty() {
+		t.Fatalf("plan = %+v, want nothing to downgrade outside npm", plan.Actions)
+	}
+
+	plan := j.Plan(statuses, jig.PlanOptions{Downgrade: jig.OfKind("npm")})
+	if len(plan.Actions) != 1 || plan.Actions[0].Op != jig.OpDowngrade || plan.Actions[0].Name != "typescript" ||
+		plan.Actions[0].To != "5.0.0" || plan.Actions[0].Blocked != nil {
+		t.Fatalf("plan = %+v, want one unblocked downgrade of typescript to 5.0.0", plan.Actions)
+	}
+	results, err := j.Apply(t.Context(), plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := results.Err(); err != nil {
+		t.Fatalf("downgrade failed: %v", err)
+	}
+	if !slices.Contains(f.npm.Calls(), "install typescript") || f.npm.installed["typescript"] != "5.0.0" {
+		t.Errorf("npm calls = %v, typescript = %q; want it reinstalled at 5.0.0", f.npm.Calls(), f.npm.installed["typescript"])
+	}
+
+	after, err := j.Status(t.Context(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stateOf(after)["typescript"]; got != "ok 5.0.0" {
+		t.Errorf("typescript after downgrade = %q, want ok 5.0.0", got)
 	}
 }
 

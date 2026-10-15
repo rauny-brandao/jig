@@ -20,8 +20,12 @@ const (
 	OpInstall Op = "install"
 	// OpUpgrade replaces an outdated item.
 	OpUpgrade Op = "upgrade"
-	// OpReinstall replaces an up-to-date item, because the plan was forced
-	// or the extra is marked reinstall: always.
+	// OpDowngrade replaces an item newer than its pin with the pinned
+	// version: one selected by PlanOptions.Downgrade, or any newer item
+	// when the plan is forced or the extra is marked reinstall: always.
+	OpDowngrade Op = "downgrade"
+	// OpReinstall installs the pinned version over the same version,
+	// because the plan was forced or the extra is marked reinstall: always.
 	OpReinstall Op = "reinstall"
 	// OpRemove removes an installed item.
 	OpRemove Op = "remove"
@@ -53,12 +57,37 @@ type Plan struct {
 // Empty reports whether the plan changes nothing.
 func (p Plan) Empty() bool { return len(p.Actions) == 0 }
 
+// Filter picks statuses, for example the items a plan covers. Named and
+// OfKind build common filters; any func(Status) bool works too.
+type Filter func(Status) bool
+
+// Named returns a Filter that matches items with one of the given names.
+// With no names it matches nothing.
+func Named(names ...string) Filter {
+	names = slices.Clone(names)
+	return func(s Status) bool { return slices.Contains(names, s.Name) }
+}
+
+// OfKind returns a Filter that matches items of one of the given kinds.
+// With no kinds it matches nothing.
+func OfKind(kinds ...Kind) Filter {
+	kinds = slices.Clone(kinds)
+	return func(s Status) bool { return slices.Contains(kinds, s.Kind) }
+}
+
 // PlanOptions narrows or widens an install plan.
 type PlanOptions struct {
-	// Force reinstalls items that are already up to date.
+	// Select limits the plan to the items it matches. Nil means every
+	// item. Requirements are still checked against every item, so a
+	// selected item whose requirement is neither installed nor selected is
+	// blocked.
+	Select Filter
+	// Force reinstalls items that are already installed and not outdated,
+	// at the pinned version. Newer items are planned as downgrades.
 	Force bool
-	// Only limits the plan to the named items. Empty means all.
-	Only []string
+	// Downgrade picks which items newer than their pin are replaced with
+	// the pinned version. Nil means none: newer items are left alone.
+	Downgrade Filter
 }
 
 // Plan turns statuses into the actions that bring the machine in line with
@@ -67,7 +96,7 @@ type PlanOptions struct {
 func (j *Jig) Plan(statuses []Status, opts PlanOptions) Plan {
 	plan := Plan{source: sourceOf(statuses)}
 	for _, s := range statuses {
-		if len(opts.Only) > 0 && !slices.Contains(opts.Only, s.Name) {
+		if opts.Select != nil && !opts.Select(s) {
 			continue
 		}
 		var op Op
@@ -76,11 +105,16 @@ func (j *Jig) Plan(statuses []Status, opts PlanOptions) Plan {
 			op = OpInstall
 		case StateOutdated:
 			op = OpUpgrade
-		case StateOK:
-			if !opts.Force && s.Extra.Reinstall != manifest.ReinstallAlways {
+		case StateOK, StateNewer:
+			forced := opts.Force || s.Extra.Reinstall == manifest.ReinstallAlways
+			switch {
+			case s.State == StateNewer && (forced || opts.Downgrade != nil && opts.Downgrade(s)):
+				op = OpDowngrade
+			case forced:
+				op = OpReinstall
+			default:
 				continue
 			}
-			op = OpReinstall
 		case StateUnsupported:
 			continue
 		}
@@ -92,8 +126,9 @@ func (j *Jig) Plan(statuses []Status, opts PlanOptions) Plan {
 
 // RemoveOptions narrows a removal plan.
 type RemoveOptions struct {
-	// Only limits the plan to the named items. Empty means all.
-	Only []string
+	// Select limits the plan to the items it matches. Nil means every
+	// item.
+	Select Filter
 	// ExtrasOnly leaves tools in place and removes only extras.
 	ExtrasOnly bool
 }
@@ -105,7 +140,7 @@ type RemoveOptions struct {
 func (j *Jig) PlanRemove(statuses []Status, opts RemoveOptions) Plan {
 	plan := Plan{source: sourceOf(statuses)}
 	for _, s := range slices.Backward(statuses) {
-		if !s.State.Installed() || len(opts.Only) > 0 && !slices.Contains(opts.Only, s.Name) {
+		if !s.State.Installed() || opts.Select != nil && !opts.Select(s) {
 			continue
 		}
 		if opts.ExtrasOnly && s.Kind == KindTool {

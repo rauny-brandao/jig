@@ -110,20 +110,6 @@ func compareIdentifier(a, b string) int {
 	}
 }
 
-// AtLeast reports whether have is greater than or equal to want. It returns
-// false when either is not a valid semantic version.
-func AtLeast(have, want string) bool {
-	h, err := Parse(have)
-	if err != nil {
-		return false
-	}
-	w, err := Parse(want)
-	if err != nil {
-		return false
-	}
-	return h.Compare(w) >= 0
-}
-
 var _semverInText = regexp.MustCompile(`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
 
 // FromOutput extracts a version from a version command's output. With a
