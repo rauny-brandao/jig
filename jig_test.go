@@ -459,8 +459,8 @@ func sdkTool(env *jigtest.Env, ver string) manifest.Tool {
 
 func TestApplyInstallsAndReplacesAnSDK(t *testing.T) {
 	env := jigtest.NewEnv()
-	var hooked []jig.Installed
-	j := newJig(t, env, _linux, jig.WithPostInstall("sdk", func(_ context.Context, in jig.Installed) error {
+	var hooked []jig.InstallInfo
+	j := newJig(t, env, _linux, jig.WithPostInstall("sdk", func(_ context.Context, in jig.InstallInfo) error {
 		hooked = append(hooked, in)
 		return nil
 	}))
@@ -630,7 +630,7 @@ func TestApplyCleansUpHomePaths(t *testing.T) {
 
 func TestApplyFailsWhenThePostInstallHookFails(t *testing.T) {
 	env := jigtest.NewEnv()
-	j := newJig(t, env, _linux, jig.WithPostInstall("gh", func(context.Context, jig.Installed) error {
+	j := newJig(t, env, _linux, jig.WithPostInstall("gh", func(context.Context, jig.InstallInfo) error {
 		return errors.New("hook broke")
 	}))
 
@@ -744,8 +744,8 @@ func TestStatusAfterApplyIsOK(t *testing.T) {
 
 func TestApplyDowngradesANewerTool(t *testing.T) {
 	env := jigtest.NewEnv()
-	var hooked []jig.Installed
-	j := newJig(t, env, _linux, jig.WithPostInstall("gh", func(_ context.Context, in jig.Installed) error {
+	var hooked []jig.InstallInfo
+	j := newJig(t, env, _linux, jig.WithPostInstall("gh", func(_ context.Context, in jig.InstallInfo) error {
 		hooked = append(hooked, in)
 		return nil
 	}))

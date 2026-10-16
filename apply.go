@@ -66,8 +66,9 @@ func (rs Results) Err() error {
 // at a time because their owning tool may not tolerate concurrent changes.
 // An install whose requirement failed is not attempted. A failed action does
 // not stop unrelated ones; check Results.Err. onEvent, which may be nil, is
-// never called concurrently. The error is non-nil only when ctx ends before
-// the plan finishes.
+// never called concurrently. With WithRecord, Apply then updates the install
+// record. The error is non-nil only when ctx ends before the plan finishes or
+// the record could not be updated; the results are complete either way.
 func (j *Jig) Apply(ctx context.Context, plan Plan, onEvent func(Event)) (Results, error) {
 	var emitMu sync.Mutex
 	emit := func(e Event) {
@@ -162,10 +163,14 @@ func (j *Jig) Apply(ctx context.Context, plan Plan, onEvent func(Event)) (Result
 	}
 	wg.Wait()
 
+	var errs []error
 	if err := ctx.Err(); err != nil {
-		return results, fmt.Errorf("apply: %w", err)
+		errs = append(errs, fmt.Errorf("apply: %w", err))
 	}
-	return results, nil
+	if err := j.updateRecord(plan, results); err != nil {
+		errs = append(errs, fmt.Errorf("apply: update record: %w", err))
+	}
+	return results, errors.Join(errs...)
 }
 
 func (j *Jig) apply(ctx context.Context, env Env, action Action) error {
@@ -191,7 +196,7 @@ func (j *Jig) apply(ctx context.Context, env Env, action Action) error {
 		return err
 	}
 	if hook, ok := j.postInstall[action.Name]; ok {
-		if err := hook(ctx, Installed{Name: action.Name, Version: action.To}); err != nil {
+		if err := hook(ctx, InstallInfo{Name: action.Name, Version: action.To}); err != nil {
 			return fmt.Errorf("post-install hook: %w", err)
 		}
 	}

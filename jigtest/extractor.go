@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/rauny-brandao/jig"
+	"github.com/rauny-brandao/jig/manifest"
 )
 
 // File is one file inside a fake archive. Mode 0 means 0644.
@@ -24,7 +25,7 @@ type File struct {
 // ExtractCall records one call to Extractor.Extract.
 type ExtractCall struct {
 	ArchivePath string
-	Format      string
+	Format      manifest.Format
 	DestDir     string
 }
 
@@ -60,7 +61,7 @@ func (e *Extractor) Calls() []ExtractCall {
 }
 
 // Extract implements jig.Extractor.
-func (e *Extractor) Extract(archivePath, format, destDir string) ([]string, error) {
+func (e *Extractor) Extract(archivePath string, format manifest.Format, destDir string) ([]string, error) {
 	data, err := e.fs.ReadFile(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("jigtest: read archive: %w", err)

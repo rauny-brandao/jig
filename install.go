@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/rauny-brandao/jig/fetch"
+	"github.com/rauny-brandao/jig/internal/check"
 	"github.com/rauny-brandao/jig/manifest"
 )
 
@@ -29,7 +30,7 @@ const (
 // so a failed install never leaves a half-written binary.
 func (j *Jig) installTool(ctx context.Context, action Action) error {
 	asset := action.Asset
-	if !manifest.IsSHA256(asset.SHA256) {
+	if !check.IsSHA256(asset.SHA256) {
 		return fmt.Errorf("sha256 %q in manifest is not 64 lowercase hex characters", asset.SHA256)
 	}
 
@@ -72,8 +73,8 @@ func (j *Jig) installTool(ctx context.Context, action Action) error {
 	j.cleanupHomePaths(action.Tool.CleanupPaths)
 
 	if hook, ok := j.postInstall[action.Name]; ok {
-		installed := Installed{Name: action.Name, Version: action.To, Asset: asset, Path: installedPath}
-		if err := hook(ctx, installed); err != nil {
+		info := InstallInfo{Name: action.Name, Version: action.To, Asset: asset, Path: installedPath}
+		if err := hook(ctx, info); err != nil {
 			return fmt.Errorf("post-install hook: %w", err)
 		}
 	}
@@ -105,7 +106,7 @@ func (j *Jig) download(ctx context.Context, asset manifest.Asset, dest string) e
 
 func (j *Jig) installFromArchive(ctx context.Context, asset manifest.Asset, archivePath, work string) (string, error) {
 	extracted := filepath.Join(work, "extract")
-	if _, err := j.deps.Extractor.Extract(archivePath, string(asset.ArchiveFormat), extracted); err != nil {
+	if _, err := j.deps.Extractor.Extract(archivePath, asset.ArchiveFormat, extracted); err != nil {
 		return "", fmt.Errorf("extract: %w", err)
 	}
 
@@ -128,7 +129,7 @@ func (j *Jig) installFromArchive(ctx context.Context, asset manifest.Asset, arch
 // move fails.
 func (j *Jig) installSDK(asset manifest.Asset, archivePath, work string) (string, error) {
 	extracted := filepath.Join(work, "extract")
-	if _, err := j.deps.Extractor.Extract(archivePath, string(sdkArchiveFormat(asset.URL)), extracted); err != nil {
+	if _, err := j.deps.Extractor.Extract(archivePath, sdkArchiveFormat(asset.URL), extracted); err != nil {
 		return "", fmt.Errorf("extract: %w", err)
 	}
 	src := filepath.Join(extracted, filepath.FromSlash(asset.SDKDir))
@@ -204,7 +205,7 @@ func (j *Jig) cleanupHomePaths(paths []string) {
 		return
 	}
 	for _, p := range paths {
-		if manifest.IsLocalPath(p) {
+		if check.IsLocalPath(p) {
 			_ = j.deps.FS.Remove(filepath.Join(j.dirs.Home, filepath.FromSlash(p)))
 		}
 	}
@@ -215,7 +216,7 @@ func (j *Jig) cleanupHomePaths(paths []string) {
 // tool name when the URL has no usable one.
 func downloadName(tool, rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil {
-		if base := path.Base(u.Path); manifest.IsPlainName(base) {
+		if base := path.Base(u.Path); check.IsPlainName(base) {
 			return base
 		}
 	}

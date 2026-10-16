@@ -71,6 +71,8 @@ type Status struct {
 	Extra manifest.Extra
 
 	source *manifest.Manifest
+	// viaPath is set for extras checked through tools on PATH.
+	viaPath bool
 }
 
 // Status reports the state of every tool and extra in m: tools by name, then
@@ -102,6 +104,7 @@ func (j *Jig) Status(ctx context.Context, m *manifest.Manifest) ([]Status, error
 	for i, name := range order {
 		statuses[i] = byName[name]
 		statuses[i].source = m
+		statuses[i].viaPath = j.commandsFromPath && statuses[i].Kind != KindTool
 	}
 	return statuses, nil
 }
