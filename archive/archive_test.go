@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/rauny-brandao/jig/archive"
+	"github.com/rauny-brandao/jig/manifest"
 )
 
 type entry struct {
@@ -154,7 +155,7 @@ func TestExtractBinaryCopiesTheFile(t *testing.T) {
 func TestExtractRejectsEntriesOutsideTheDestination(t *testing.T) {
 	tests := []struct {
 		name    string
-		format  string
+		format  manifest.Format
 		entries []entry
 	}{
 		{"zip parent traversal", "zip", []entry{{name: "../evil", body: "x"}}},
@@ -188,7 +189,7 @@ func TestExtractRejectsEntriesOutsideTheDestination(t *testing.T) {
 }
 
 func TestExtractRejectsUnsupportedFormats(t *testing.T) {
-	for _, format := range []string{"rar", "sdk"} {
+	for _, format := range []manifest.Format{"rar", manifest.FormatSDK} {
 		if _, err := (archive.Extractor{}).Extract("unused", format, t.TempDir()); err == nil {
 			t.Errorf("Extract(format %q) succeeded, want error", format)
 		}

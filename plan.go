@@ -52,6 +52,8 @@ type Plan struct {
 	Actions []Action
 
 	source *manifest.Manifest
+	// seen are the statuses the plan was made from, for the install record.
+	seen []Status
 }
 
 // Empty reports whether the plan changes nothing.
@@ -75,6 +77,16 @@ func OfKind(kinds ...Kind) Filter {
 	return func(s Status) bool { return slices.Contains(kinds, s.Kind) }
 }
 
+// Not returns a Filter that matches the items f does not. A nil f matches
+// every item, as it does in PlanOptions and RemoveOptions, so Not(nil)
+// matches nothing.
+func Not(f Filter) Filter {
+	if f == nil {
+		return func(Status) bool { return false }
+	}
+	return func(s Status) bool { return !f(s) }
+}
+
 // PlanOptions narrows or widens an install plan.
 type PlanOptions struct {
 	// Select limits the plan to the items it matches. Nil means every
@@ -94,7 +106,7 @@ type PlanOptions struct {
 // the manifest, in dependency order. Unsupported items are never planned.
 // Planning has no side effects, so a plan can be shown as a dry run.
 func (j *Jig) Plan(statuses []Status, opts PlanOptions) Plan {
-	plan := Plan{source: sourceOf(statuses)}
+	plan := Plan{source: sourceOf(statuses), seen: slices.Clone(statuses)}
 	for _, s := range statuses {
 		if opts.Select != nil && !opts.Select(s) {
 			continue
@@ -126,11 +138,9 @@ func (j *Jig) Plan(statuses []Status, opts PlanOptions) Plan {
 
 // RemoveOptions narrows a removal plan.
 type RemoveOptions struct {
-	// Select limits the plan to the items it matches. Nil means every
-	// item.
+	// Select limits the plan to the items it matches, for example
+	// Not(OfKind(KindTool)) to leave tools in place. Nil means every item.
 	Select Filter
-	// ExtrasOnly leaves tools in place and removes only extras.
-	ExtrasOnly bool
 }
 
 // PlanRemove returns the actions that remove every installed item, in
@@ -138,12 +148,9 @@ type RemoveOptions struct {
 // it. Removing a tool deletes the files jig installed for it; removing an
 // extra goes through its handler.
 func (j *Jig) PlanRemove(statuses []Status, opts RemoveOptions) Plan {
-	plan := Plan{source: sourceOf(statuses)}
+	plan := Plan{source: sourceOf(statuses), seen: slices.Clone(statuses)}
 	for _, s := range slices.Backward(statuses) {
 		if !s.State.Installed() || opts.Select != nil && !opts.Select(s) {
-			continue
-		}
-		if opts.ExtrasOnly && s.Kind == KindTool {
 			continue
 		}
 		plan.Actions = append(plan.Actions, actionFor(OpRemove, s))

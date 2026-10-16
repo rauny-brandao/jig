@@ -40,15 +40,18 @@ linters:
     depguard:
       rules:
         # manifest and version are imported by programs whose core may only
-        # depend on the standard library and must not do I/O. Keep that true.
+        # depend on the standard library and must not do I/O. Keep that true,
+        # including for internal/check, which manifest imports.
         pure-packages:
           list-mode: strict
           files:
             - "**/manifest/*.go"
             - "**/version/*.go"
+            - "**/internal/check/*.go"
             - "!$test"
           allow:
             - $gostd
+            - github.com/rauny-brandao/jig/internal/check
           deny:
             - pkg: os
               desc: manifest and version must not touch the filesystem or environment

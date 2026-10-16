@@ -12,6 +12,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/rauny-brandao/jig/fetch"
@@ -54,7 +55,7 @@ type VerifyingFetcher interface {
 // Extractor unpacks an archive of the given manifest.Format into destDir and
 // returns the paths it created.
 type Extractor interface {
-	Extract(archivePath, format, destDir string) ([]string, error)
+	Extract(archivePath string, format manifest.Format, destDir string) ([]string, error)
 }
 
 // CommandResult is the captured outcome of a command that ran.
@@ -98,8 +99,9 @@ type Dirs struct {
 	Home string
 }
 
-// Installed describes a tool that was just installed, for post-install hooks.
-type Installed struct {
+// InstallInfo describes an item that was just installed, for post-install
+// hooks. Asset and Path are set only for tools.
+type InstallInfo struct {
 	Name    string
 	Version string
 	Asset   manifest.Asset
@@ -107,9 +109,9 @@ type Installed struct {
 	Path string
 }
 
-// PostInstallHook runs after a tool is installed. An error marks the install
-// as failed.
-type PostInstallHook func(ctx context.Context, installed Installed) error
+// PostInstallHook runs after a tool or extra is installed. An error marks the
+// install as failed.
+type PostInstallHook func(ctx context.Context, info InstallInfo) error
 
 // Option configures a Jig.
 type Option func(*Jig)
@@ -170,6 +172,9 @@ type Jig struct {
 	mutateTimeout time.Duration
 	// commandsFromPath makes Env.Command return bare tool names.
 	commandsFromPath bool
+	// recordPath is the install record, or "" when nothing is recorded.
+	recordPath string
+	recordMu   sync.Mutex
 }
 
 // New returns a Jig that installs tools for platform into dirs.

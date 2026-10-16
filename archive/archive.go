@@ -34,7 +34,7 @@ type Extractor struct{}
 // Extract unpacks archivePath into destDir according to format and returns
 // the paths of the files and links it created. Supported formats are zip,
 // tar.gz, tar.bz2, gz (a single compressed file) and binary (copied as is).
-func (Extractor) Extract(archivePath, format, destDir string) ([]string, error) {
+func (Extractor) Extract(archivePath string, format manifest.Format, destDir string) ([]string, error) {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return nil, fmt.Errorf("extract %s: create destination: %w", archivePath, err)
 	}
@@ -42,7 +42,7 @@ func (Extractor) Extract(archivePath, format, destDir string) ([]string, error) 
 		created []string
 		err     error
 	)
-	switch manifest.Format(format) {
+	switch format {
 	case manifest.FormatZip:
 		created, err = extractZip(archivePath, destDir)
 	case manifest.FormatTarGz:

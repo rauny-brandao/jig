@@ -151,15 +151,3 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 		}
 	}
 }
-
-func TestIsLocalPath(t *testing.T) {
-	for p, want := range map[string]bool{
-		"bin/tool": true, "tool": true, "a/../b": true, "./tool": true,
-		"": false, ".": false, "..": false, "../x": false, "a/../../x": false,
-		"/etc/passwd": false, `C:\tool`: false, "C:/tool": false, `bin\tool`: false,
-	} {
-		if got := manifest.IsLocalPath(p); got != want {
-			t.Errorf("IsLocalPath(%q) = %v, want %v", p, got, want)
-		}
-	}
-}

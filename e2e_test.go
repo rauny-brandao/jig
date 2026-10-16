@@ -39,7 +39,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 	dirs := jig.Dirs{Base: root, Bin: filepath.Join(root, "bin"), Cache: filepath.Join(root, "cache"), Home: root}
 	platform := manifest.Current()
-	j, err := jig.New(host.Deps(), dirs, platform, jig.WithHandlers(kinds.Defaults()...))
+	j, err := jig.New(host.Deps(), dirs, platform, jig.WithHandlers(kinds.Defaults()...), jig.WithRecord(filepath.Join(root, "record.json")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,22 +81,34 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("uv tool executable not in the bin directory: %v", err)
 	}
 
-	// Extras are removed and checked while the tools that detect them are
-	// still installed, so an extra that comes back is noticed.
-	remove(t, j, j.PlanRemove(installed, jig.RemoveOptions{ExtrasOnly: true}))
-	remaining := status(t, j, m)
-	for _, s := range remaining {
+	// Extras are removed from the record, without the manifest, and checked
+	// while the tools that detect them are still installed, so an extra that
+	// comes back is noticed.
+	remove(t, j, planRemoveRecorded(t, j, jig.RemoveOptions{Select: jig.Not(jig.OfKind(jig.KindTool))}))
+	for _, s := range status(t, j, m) {
 		if s.Kind != jig.KindTool && s.State.Installed() {
 			t.Errorf("%s still installed after removal", s.Name)
 		}
 	}
 
-	remove(t, j, j.PlanRemove(remaining, jig.RemoveOptions{}))
+	remove(t, j, planRemoveRecorded(t, j, jig.RemoveOptions{}))
 	for _, s := range status(t, j, m) {
 		if s.State.Installed() {
 			t.Errorf("%s still installed after removal", s.Name)
 		}
 	}
+	if left, err := j.Record(); err != nil || len(left) != 0 {
+		t.Errorf("record after removing everything = %v, %v; want it empty", left, err)
+	}
+}
+
+func planRemoveRecorded(t *testing.T, j *jig.Jig, opts jig.RemoveOptions) jig.Plan {
+	t.Helper()
+	plan, err := j.PlanRemoveRecorded(nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }
 
 func remove(t *testing.T, j *jig.Jig, plan jig.Plan) {

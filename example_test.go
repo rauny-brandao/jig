@@ -6,6 +6,7 @@ package jig_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -33,7 +34,8 @@ func Example() {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, ".mytool")
 	dirs := jig.Dirs{Base: root, Bin: filepath.Join(root, "bin"), Cache: filepath.Join(root, "cache"), Home: home}
-	j, err := jig.New(host.Deps(), dirs, manifest.Current(), jig.WithHandlers(kinds.Defaults()...))
+	j, err := jig.New(host.Deps(), dirs, manifest.Current(), jig.WithHandlers(kinds.Defaults()...),
+		jig.WithRecord(filepath.Join(root, "record.json")))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,6 +51,45 @@ func Example() {
 	results, err := j.Apply(ctx, plan, func(e jig.Event) {
 		fmt.Println(e.Type, e.Action.Op, e.Action.Name, e.Action.To)
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := results.Err(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// Remove the items an earlier manifest installed that the current one no
+// longer declares. Apply keeps the record that WithRecord names up to date.
+func ExampleJig_PlanRemoveRecorded() {
+	ctx := context.Background()
+	data, err := os.ReadFile("tools.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+	m, err := jig.Parse(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".mytool")
+	dirs := jig.Dirs{Base: root, Bin: filepath.Join(root, "bin"), Cache: filepath.Join(root, "cache"), Home: home}
+	j, err := jig.New(host.Deps(), dirs, manifest.Current(), jig.WithHandlers(kinds.Defaults()...),
+		jig.WithRecord(filepath.Join(root, "record.json")))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Pass nil instead of m to uninstall everything that was recorded.
+	plan, err := j.PlanRemoveRecorded(m, jig.RemoveOptions{})
+	if errors.Is(err, jig.ErrNoRecord) {
+		return // nothing installed yet
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	results, err := j.Apply(ctx, plan, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

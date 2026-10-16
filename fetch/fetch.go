@@ -18,7 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rauny-brandao/jig/manifest"
+	"github.com/rauny-brandao/jig/internal/check"
 )
 
 // ErrChecksumMismatch means downloaded content does not match the expected
@@ -48,7 +48,7 @@ func (c *Client) Download(ctx context.Context, url, dest string) error {
 // created when the SHA-256 matches wantSHA256; otherwise the error wraps
 // ErrChecksumMismatch and nothing is left behind.
 func (c *Client) DownloadVerified(ctx context.Context, url, dest, wantSHA256 string) error {
-	if !manifest.IsSHA256(wantSHA256) {
+	if !check.IsSHA256(wantSHA256) {
 		return fmt.Errorf("download %s: expected sha256 %q is not 64 lowercase hex characters", url, wantSHA256)
 	}
 	return c.download(ctx, url, dest, wantSHA256)

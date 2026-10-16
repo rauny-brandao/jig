@@ -507,7 +507,7 @@ func TestPlanRemoveTearsDownInReverseOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	extrasOnly := j.PlanRemove(statuses, jig.RemoveOptions{ExtrasOnly: true})
+	extrasOnly := j.PlanRemove(statuses, jig.RemoveOptions{Select: jig.Not(jig.OfKind(jig.KindTool))})
 	var names []string
 	for _, a := range extrasOnly.Actions {
 		names = append(names, a.Name)
@@ -572,11 +572,11 @@ func TestPlanRemoveSelectsItems(t *testing.T) {
 		want []string
 	}{
 		{"all", jig.RemoveOptions{}, []string{"fnm", "gh", "node", "stack", "typescript"}},
-		{"extras only", jig.RemoveOptions{ExtrasOnly: true}, []string{"node", "stack", "typescript"}},
+		{"extras only", jig.RemoveOptions{Select: jig.Not(jig.OfKind(jig.KindTool))}, []string{"node", "stack", "typescript"}},
 		{"named", jig.RemoveOptions{Select: jig.Named("node", "fnm")}, []string{"fnm", "node"}},
-		{"named extras only", jig.RemoveOptions{Select: jig.Named("node", "fnm"), ExtrasOnly: true}, []string{"node"}},
+		{"not named", jig.RemoveOptions{Select: jig.Not(jig.Named("node", "fnm"))}, []string{"gh", "stack", "typescript"}},
 		{"of kind", jig.RemoveOptions{Select: jig.OfKind("npm")}, []string{"typescript"}},
-		{"tools, extras only", jig.RemoveOptions{Select: jig.OfKind(jig.KindTool), ExtrasOnly: true}, nil},
+		{"not nil", jig.RemoveOptions{Select: jig.Not(nil)}, nil},
 		{"no names", jig.RemoveOptions{Select: jig.Named()}, nil},
 	}
 	for _, tt := range tests {
@@ -693,7 +693,7 @@ func TestApplyRunsPostInstallHooksForExtras(t *testing.T) {
 	env := jigtest.NewEnv()
 	f := newFakes()
 	var hooked []string
-	j := newJig(t, env, _linux, f.option(), jig.WithPostInstall("typescript", func(_ context.Context, in jig.Installed) error {
+	j := newJig(t, env, _linux, f.option(), jig.WithPostInstall("typescript", func(_ context.Context, in jig.InstallInfo) error {
 		hooked = append(hooked, in.Name+"@"+in.Version)
 		return nil
 	}))

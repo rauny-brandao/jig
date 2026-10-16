@@ -4,7 +4,7 @@ jig is a Go library for installing pinned, checksum-verified developer tools fro
 manifest, along with the extras those tools manage: CLI extensions, language runtimes, global
 packages.
 
-> **Status:** v0.4, pre-release. The API may change until v1.0.
+> **Status:** v1.0. The API is stable: it changes only in backwards-compatible ways until v2.
 
 ## Why jig
 
@@ -17,6 +17,8 @@ Tools like aqua, mise and asdf are standalone CLIs. jig is meant to be **embedde
 - **Beyond binaries.** Extras are installed through the tool that owns them, after everything they
   `require`, and removed in reverse order. Five kinds are built in, and you can add your own.
 - **Side-effect free checks.** `Status` never changes the machine, so a plan doubles as a dry run.
+- **Install record.** jig can record what it manages, so it can remove items the manifest no longer
+  declares, or uninstall everything, without asking the tools that own them.
 - **Pluggable I/O.** jig touches the filesystem, network and processes only through small
   interfaces. `host.Deps()` gives you the real ones.
 - **Testable.** `jigtest` ships in-memory fakes, so your tests never download or execute anything.
@@ -77,7 +79,7 @@ place, and the removal fails with an error that wraps `jig.ErrNotManaged`.
 m, _ := jig.Parse(data)
 
 j, _ := jig.New(host.Deps(), jig.Dirs{Base: root, Bin: bin, Cache: cache, Home: home},
-    manifest.Current(), jig.WithHandlers(kinds.Defaults()...))
+    manifest.Current(), jig.WithHandlers(kinds.Defaults()...), jig.WithRecord(record))
 if err := j.Validate(m); err != nil { … }
 
 statuses, _ := j.Status(ctx, m)                       // ok, newer, missing, outdated or unsupported, per item
@@ -91,9 +93,10 @@ teardown := j.PlanRemove(statuses, jig.RemoveOptions{}) // reverse dependency or
 ```
 
 Plan options:
-- `Select` limits the plan to some items, with `jig.Named("gh", "jq")`, `jig.OfKind(jig.KindTool)` or any
-  `func(jig.Status) bool`. Nil means every item; `Named()` and `OfKind()` with no arguments match nothing.
-  `RemoveOptions.Select` does the same for removals.
+- `Select` limits the plan to some items, with `jig.Named("gh", "jq")`, `jig.OfKind(jig.KindTool)`,
+  `jig.Not(...)` or any `func(jig.Status) bool`. Nil means every item; `Named()` and `OfKind()` with no
+  arguments match nothing. `RemoveOptions.Select` does the same for removals, for example
+  `jig.Not(jig.OfKind(jig.KindTool))` to remove only extras.
 - `Force` reinstalls items that are already installed at the pin, and downgrades newer ones to it.
 - `Downgrade` picks which items newer than their pin are replaced with the pinned version, for exact pins:
 
@@ -106,7 +109,28 @@ Plan options:
 Versions are compared as semantic versions, so `v1.2.3` and `1.2.3` are the same version. A version that
 isn't semantic counts as outdated unless it equals the pin exactly.
 
+### Install record
+
+With `jig.WithRecord(path)`, jig keeps a JSON record of the items it manages. `Apply` updates it:
+installed items are added and removed ones dropped. Items that `Status` found already installed are
+added too, so a machine set up before the record existed is recorded on its next `Apply`, even of an
+empty plan. An unreadable record is replaced with what `Apply` knows, and `Apply` returns an error
+saying so.
+
+`PlanRemoveRecorded` plans removals from the record alone, without asking the tools that own the
+extras:
+
+```go
+prune, err := j.PlanRemoveRecorded(m, jig.RemoveOptions{})   // items m no longer declares
+all, err := j.PlanRemoveRecorded(nil, jig.RemoveOptions{})   // everything recorded
+one, err := j.PlanRemoveRecorded(nil, jig.RemoveOptions{Select: jig.Named("jq")})
+```
+
+Both return an error wrapping `jig.ErrNoRecord` until a record has been written. `j.Record()` lists
+what is recorded.
+
 Options:
+- `jig.WithRecord(path)` keeps the install record described above.
 - `jig.WithPostInstall(name, hook)` runs your own step after a tool or extra installs.
 - `jig.WithBeforeKind(kind, check)` runs a precondition once before installing extras of a kind,
   such as checking that gh is logged in.
@@ -142,8 +166,7 @@ go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml -chec
 | v0.2 | Extras: five built-in kinds, custom kinds, `requires` ordering, removal |
 | v0.3 | Go 1.27, extra descriptions, running parent tools from PATH, full JDK removal, shorter command errors |
 | v0.4 | Plan filters (`Select`, `Named`, `OfKind`), versions newer than the pin reported and optionally downgraded |
-| v1.0 | Stable API |
-| v1.1 | Install record: remove tools dropped from the manifest, uninstall a single tool |
+| v1.0 | Stable API. Install record: remove items dropped from the manifest, uninstall everything or a single item |
 
 ## License
 

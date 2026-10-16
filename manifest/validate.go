@@ -8,9 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"path"
 	"slices"
 	"strings"
+
+	"github.com/rauny-brandao/jig/internal/check"
 )
 
 // Validate reports every problem in the manifest, joined into one error.
@@ -35,7 +36,7 @@ func (t Tool) validate(name string) error {
 		errs = append(errs, fmt.Errorf("tool %q: "+format, append([]any{name}, args...)...))
 	}
 
-	if !IsPlainName(name) {
+	if !check.IsPlainName(name) {
 		fail("name must be a plain file name")
 	}
 	if t.Version == "" {
@@ -48,7 +49,7 @@ func (t Tool) validate(name string) error {
 		fail("verify_pattern must contain %s", VersionPlaceholder)
 	}
 	for _, p := range t.CleanupPaths {
-		if !IsLocalPath(p) {
+		if !check.IsLocalPath(p) {
 			fail("cleanup_paths entry %q must be a relative path inside the home directory", p)
 		}
 	}
@@ -77,24 +78,24 @@ func (a Asset) problems() []error {
 	if !a.ArchiveFormat.Valid() {
 		fail("archive_format %q is not one of %v", a.ArchiveFormat, Formats())
 	}
-	if !IsPlainName(a.BinaryName) {
+	if !check.IsPlainName(a.BinaryName) {
 		fail("binary_name %q must be a plain file name", a.BinaryName)
 	}
-	if !IsSHA256(a.SHA256) {
+	if !check.IsSHA256(a.SHA256) {
 		fail("sha256 must be 64 lowercase hex characters")
 	}
-	if a.BinaryPath != "" && !IsLocalPath(a.BinaryPath) {
+	if a.BinaryPath != "" && !check.IsLocalPath(a.BinaryPath) {
 		fail("binary_path %q must be a relative path inside the archive", a.BinaryPath)
 	}
 	for _, extra := range a.ExtraBinaries {
-		if !IsLocalPath(extra) {
+		if !check.IsLocalPath(extra) {
 			fail("extra_binaries entry %q must be a relative path inside the archive", extra)
 		}
 	}
 
 	switch a.ArchiveFormat {
 	case FormatSDK:
-		if !IsLocalPath(a.SDKDir) {
+		if !check.IsLocalPath(a.SDKDir) {
 			fail("sdk_dir %q must be a relative path inside the archive", a.SDKDir)
 		}
 	case FormatBinary:
@@ -108,34 +109,4 @@ func (a Asset) problems() []error {
 		fail("sdk_dir only applies to archive_format %q", FormatSDK)
 	}
 	return errs
-}
-
-// IsSHA256 reports whether s is a lowercase hex-encoded SHA-256 digest.
-func IsSHA256(s string) bool {
-	if len(s) != 64 {
-		return false
-	}
-	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
-// IsPlainName reports whether s is a single file name: not empty, not "." or
-// "..", and free of path separators.
-func IsPlainName(s string) bool {
-	return s != "" && s != "." && s != ".." && !strings.ContainsAny(s, `/\:`)
-}
-
-// IsLocalPath reports whether p is a slash-separated relative path that stays
-// inside its root on every operating system: not empty, not absolute, no
-// backslashes or drive letters, and no ".." segment escaping the root.
-func IsLocalPath(p string) bool {
-	if p == "" || strings.HasPrefix(p, "/") || strings.ContainsAny(p, `\:`) {
-		return false
-	}
-	cleaned := path.Clean(p)
-	return cleaned != "." && cleaned != ".." && !strings.HasPrefix(cleaned, "../")
 }

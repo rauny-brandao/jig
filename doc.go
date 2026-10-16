@@ -16,4 +16,8 @@
 // PlanOptions.Downgrade selects them. A Filter such as Named or OfKind
 // narrows a plan to some items. Apply carries the plan out in dependency
 // order.
+//
+// WithRecord keeps a record of the items jig manages, which Apply updates.
+// PlanRemoveRecorded uses it to remove items the manifest no longer declares,
+// or everything, without asking the tools that own them.
 package jig
