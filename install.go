@@ -233,6 +233,8 @@ func sdkArchiveFormat(rawURL string) manifest.Format {
 	switch {
 	case strings.HasSuffix(p, ".zip"):
 		return manifest.FormatZip
+	case strings.HasSuffix(p, ".tar.xz"), strings.HasSuffix(p, ".txz"):
+		return manifest.FormatTarXz
 	case strings.HasSuffix(p, ".tar.bz2"), strings.HasSuffix(p, ".tbz2"):
 		return manifest.FormatTarBz2
 	default:

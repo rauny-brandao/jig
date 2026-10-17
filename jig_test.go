@@ -487,6 +487,45 @@ func TestApplyInstallsAndReplacesAnSDK(t *testing.T) {
 	}
 }
 
+func TestApplyInstallsSDKArchiveFormatsByURL(t *testing.T) {
+	tests := []struct {
+		ext  string
+		want manifest.Format
+	}{
+		{".zip", manifest.FormatZip},
+		{".tar.gz", manifest.FormatTarGz},
+		{".tgz", manifest.FormatTarGz},
+		{".tar.xz", manifest.FormatTarXz},
+		{".txz", manifest.FormatTarXz},
+		{".tar.bz2", manifest.FormatTarBz2},
+		{".tbz2", manifest.FormatTarBz2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ext, func(t *testing.T) {
+			env := jigtest.NewEnv()
+			j := newJig(t, env, _linux)
+			tool := sdkTool(env, "2.0.0")
+			asset := tool.Platforms["linux_amd64"]
+			body := []byte("sdk archive " + tt.ext)
+			env.Fetcher.Serve("https://example.com/sdk-2.0.0"+tt.ext+"?raw=1", body)
+			env.Extractor.Register(body, map[string]jigtest.File{
+				"my-sdk/bin/sdk": {Data: []byte("sdk 2.0.0"), Mode: 0o755},
+			})
+			asset.URL = "https://example.com/sdk-{version}" + tt.ext + "?raw=1"
+			asset.SHA256 = digest(body)
+			tool.Platforms["linux_amd64"] = asset
+
+			results, _ := install(t, j, manifestOf(map[string]manifest.Tool{"sdk": tool}))
+			if err := results.Err(); err != nil {
+				t.Fatalf("Apply() failed: %v", err)
+			}
+			if calls := env.Extractor.Calls(); len(calls) != 1 || calls[0].Format != tt.want {
+				t.Errorf("extractor calls = %+v, want format %q", calls, tt.want)
+			}
+		})
+	}
+}
+
 func TestApplyKeepsThePreviousSDKWhenTheArchiveIsWrong(t *testing.T) {
 	env := jigtest.NewEnv()
 	j := newJig(t, env, _linux)

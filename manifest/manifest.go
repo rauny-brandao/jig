@@ -26,20 +26,22 @@ const (
 	FormatZip Format = "zip"
 	// FormatTarGz is a gzip-compressed tar archive.
 	FormatTarGz Format = "tar.gz"
+	// FormatTarXz is an xz-compressed tar archive.
+	FormatTarXz Format = "tar.xz"
 	// FormatTarBz2 is a bzip2-compressed tar archive.
 	FormatTarBz2 Format = "tar.bz2"
 	// FormatGz is a single gzip-compressed binary.
 	FormatGz Format = "gz"
 	// FormatBinary is an uncompressed binary.
 	FormatBinary Format = "binary"
-	// FormatSDK is a zip or tar.gz archive whose SDKDir is kept intact
-	// instead of extracting a single binary.
+	// FormatSDK is a zip, tar.gz, tar.xz or tar.bz2 archive whose SDKDir
+	// is kept intact instead of extracting a single binary.
 	FormatSDK Format = "sdk"
 )
 
 // Formats lists every supported format.
 func Formats() []Format {
-	return []Format{FormatZip, FormatTarGz, FormatTarBz2, FormatGz, FormatBinary, FormatSDK}
+	return []Format{FormatZip, FormatTarGz, FormatTarXz, FormatTarBz2, FormatGz, FormatBinary, FormatSDK}
 }
 
 // Valid reports whether f is a supported format.

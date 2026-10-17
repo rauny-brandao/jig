@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/rauny-brandao/jig/manifest"
+	"github.com/ulikunitz/xz"
 )
 
 // ErrUnsafePath means an archive entry would be written outside the
@@ -33,7 +34,8 @@ type Extractor struct{}
 
 // Extract unpacks archivePath into destDir according to format and returns
 // the paths of the files and links it created. Supported formats are zip,
-// tar.gz, tar.bz2, gz (a single compressed file) and binary (copied as is).
+// tar.gz, tar.xz, tar.bz2, gz (a single compressed file) and binary (copied
+// as is).
 func (Extractor) Extract(archivePath string, format manifest.Format, destDir string) ([]string, error) {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return nil, fmt.Errorf("extract %s: create destination: %w", archivePath, err)
@@ -47,6 +49,8 @@ func (Extractor) Extract(archivePath string, format manifest.Format, destDir str
 		created, err = extractZip(archivePath, destDir)
 	case manifest.FormatTarGz:
 		created, err = extractCompressedTar(archivePath, destDir, func(r io.Reader) (io.Reader, error) { return gzip.NewReader(r) })
+	case manifest.FormatTarXz:
+		created, err = extractCompressedTar(archivePath, destDir, func(r io.Reader) (io.Reader, error) { return xz.NewReader(r) })
 	case manifest.FormatTarBz2:
 		created, err = extractCompressedTar(archivePath, destDir, func(r io.Reader) (io.Reader, error) { return bzip2.NewReader(r), nil })
 	case manifest.FormatGz:
@@ -54,7 +58,7 @@ func (Extractor) Extract(archivePath string, format manifest.Format, destDir str
 	case manifest.FormatBinary:
 		created, err = copyBinary(archivePath, destDir)
 	case manifest.FormatSDK:
-		err = fmt.Errorf("format %q must be extracted as zip or tar.gz", format)
+		err = fmt.Errorf("format %q must be extracted as zip, tar.gz, tar.xz or tar.bz2", format)
 	default:
 		err = fmt.Errorf("unsupported format %q", format)
 	}

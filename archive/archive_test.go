@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/rauny-brandao/jig/archive"
 	"github.com/rauny-brandao/jig/manifest"
+	"github.com/ulikunitz/xz"
 )
 
 type entry struct {
@@ -102,6 +104,19 @@ func TestExtractTarBz2(t *testing.T) {
 		t.Fatalf("Extract() error = %v", err)
 	}
 	assertFile(t, filepath.Join(dest, "dir", "tool"), "bz2 tool\n", 0o755)
+}
+
+func TestExtractTarXz(t *testing.T) {
+	src := writeTarXz(t, []entry{
+		{name: "pkg/", typeflag: tar.TypeDir},
+		{name: "pkg/tool", body: "xz tool", mode: 0o755, typeflag: tar.TypeReg},
+	})
+	dest := t.TempDir()
+
+	if _, err := (archive.Extractor{}).Extract(src, "tar.xz", dest); err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	assertFile(t, filepath.Join(dest, "pkg", "tool"), "xz tool", 0o755)
 }
 
 func TestExtractGzUsesHeaderName(t *testing.T) {
@@ -226,9 +241,25 @@ func writeZip(t *testing.T, entries []entry) string {
 
 func writeTarGz(t *testing.T, entries []entry) string {
 	t.Helper()
+	return writeTar(t, "archive.tar.gz", func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) }, entries)
+}
+
+func writeTarXz(t *testing.T, entries []entry) string {
+	t.Helper()
+	return writeTar(t, "archive.tar.xz", func(w io.Writer) io.WriteCloser {
+		xw, err := xz.NewWriter(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return xw
+	}, entries)
+}
+
+func writeTar(t *testing.T, name string, compress func(io.Writer) io.WriteCloser, entries []entry) string {
+	t.Helper()
 	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
+	cw := compress(&buf)
+	tw := tar.NewWriter(cw)
 	for _, e := range entries {
 		header := &tar.Header{Name: e.name, Mode: e.mode, Typeflag: e.typeflag, Linkname: e.link, Size: int64(len(e.body))}
 		if e.typeflag != tar.TypeReg {
@@ -246,10 +277,10 @@ func writeTarGz(t *testing.T, entries []entry) string {
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := gw.Close(); err != nil {
+	if err := cw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return writeTemp(t, "archive.tar.gz", buf.Bytes())
+	return writeTemp(t, name, buf.Bytes())
 }
 
 func writeGz(t *testing.T, fileName, headerName, body string) string {
