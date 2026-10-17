@@ -33,7 +33,7 @@ tools:
     platforms:
       linux_amd64:
         url: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_linux_amd64.tar.gz"
-        archive_format: tar.gz          # zip, tar.gz, tar.bz2, gz, binary or sdk
+        archive_format: tar.gz          # zip, tar.gz, tar.xz, tar.bz2, gz, binary or sdk
         binary_name: gh
         binary_path: "gh_{version}_linux_amd64/bin/gh"
         sha256: "bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
