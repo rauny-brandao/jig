@@ -22,7 +22,7 @@ import (
 )
 
 // ErrChecksumMismatch means downloaded content does not match the expected
-// SHA-256.
+// checksum.
 var ErrChecksumMismatch = errors.New("checksum mismatch")
 
 // Client downloads files over HTTP. The zero value uses http.DefaultClient.

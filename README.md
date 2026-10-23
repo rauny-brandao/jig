@@ -66,7 +66,7 @@ See [examples/tools.yaml](examples/tools.yaml) for a complete manifest.
 | `gh-extension` | GitHub CLI extensions | `gh` | `repo` |
 | `uv-tool` | Python applications, into jig's bin directory | `uv` | `source`; `hooks` |
 | `node-runtime` | A Node.js release channel | `fnm` | `channel`, `default` |
-| `npm-global` | A global npm package in a node-runtime | `fnm`, `npm` | `version` |
+| `npm-global` | A global npm package in a node-runtime (`--ignore-scripts`) | `fnm`, `npm` | `version`, `integrity` |
 | `jdk` | A Java Development Kit | Coursier (`cs`) | `jvm` (defaults to the name) |
 
 Each kind rejects fields it doesn't know, so typos fail validation. Removing a JDK only ever deletes
