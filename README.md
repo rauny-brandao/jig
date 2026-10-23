@@ -10,21 +10,30 @@ packages.
 
 Tools like aqua, mise and asdf are standalone CLIs. jig is meant to be **embedded in your own Go CLI**:
 
-- **Pinned and verified.** Every download is checked against the SHA-256 in the manifest before
-  anything is unpacked. Binaries are written beside their destination and renamed into place, so a
-  failed install never leaves a broken binary behind.
-- **Safe extraction.** Archive entries, symlinks and hard links can never land outside the target folder.
+- **Verified and atomic.** Every download is checked against the SHA-256 in the manifest before
+  unpacking. Archive entries, symlinks and hard links can never land outside the target folder, and
+  binaries are written beside their destination and renamed into place so a failed install never
+  leaves a broken binary behind.
 - **Beyond binaries.** Extras are installed through the tool that owns them, after everything they
   `require`, and removed in reverse order. Five kinds are built in, and you can add your own.
-- **Side-effect free checks.** `Status` never changes the machine, so a plan doubles as a dry run.
-- **Install record.** jig can record what it manages, so it can remove items the manifest no longer
-  declares, or uninstall everything, without asking the tools that own them.
-- **Pluggable I/O.** jig touches the filesystem, network and processes only through small
-  interfaces. `host.Deps()` gives you the real ones.
-- **Testable.** `jigtest` ships in-memory fakes, so your tests never download or execute anything.
-- **Cross-platform.** macOS, Linux and Windows, tested end to end on all three.
+- **Side-effect free planning.** `Status` never changes the machine, so a `Plan` doubles as a dry run.
+- **Lifecycle tracking.** An optional install record tracks what jig manages, so it can prune items
+  the manifest no longer declares, or uninstall everything, without asking the tools that own them.
+- **Testable without I/O.** jig touches the filesystem, network and processes only through small
+  interfaces: `host.Deps()` in production and in-memory fakes from `jigtest` in tests. Tested end to
+  end on macOS, Linux and Windows.
 
-## Manifest
+## Install
+
+```sh
+go get github.com/rauny-brandao/jig@latest
+```
+
+API documentation and runnable examples are on [pkg.go.dev](https://pkg.go.dev/github.com/rauny-brandao/jig).
+
+## Quickstart
+
+### 1. Declare tools and extras
 
 ```yaml
 tools:
@@ -46,79 +55,63 @@ extras:
   - { kind: npm-global, name: semver, version: "7.8.5", requires: [node] }
 ```
 
-Other tool fields:
-- `extra_binaries` installs more files from the same archive (for example `uvx` next to `uv`).
-- `sdk_dir` with `archive_format: sdk` keeps a whole SDK directory intact.
-- `cleanup_paths` removes stale home-relative paths after an install.
+See [examples/tools.yaml](examples/tools.yaml) for a complete multi-platform manifest.
 
-Fields common to every extra:
-- `description` says what the extra is for. jig doesn't use it.
-- `requires` lists the tools and extras it needs. They are installed first and removed last.
-- `platforms` limits the extra to operating systems (`darwin`) or platform keys (`darwin_arm64`).
-- `reinstall: always` reinstalls the extra on every apply, for sources that track a branch.
-
-See [examples/tools.yaml](examples/tools.yaml) for a complete manifest.
-
-### Built-in extra kinds
-
-| Kind | Installs | Through | Fields |
-|---|---|---|---|
-| `gh-extension` | GitHub CLI extensions | `gh` | `repo` |
-| `uv-tool` | Python applications, into jig's bin directory | `uv` | `source`; `hooks` |
-| `node-runtime` | A Node.js release channel | `fnm` | `channel`, `default` |
-| `npm-global` | A global npm package in a node-runtime (`--ignore-scripts`) | `fnm`, `npm` | `version`, `integrity` |
-| `jdk` | A Java Development Kit | Coursier (`cs`) | `jvm` (defaults to the name) |
-
-Each kind rejects fields it doesn't know, so typos fail validation. Removing a JDK only ever deletes
-its directory and downloaded archive inside Coursier's caches. A JDK installed anywhere else is left in
-place, and the removal fails with an error that wraps `jig.ErrNotManaged`.
-
-## Usage
+### 2. Check, plan and apply
 
 ```go
-m, _ := jig.Parse(data)
+m, err := jig.Parse(data)
+if err != nil { … }
 
-j, _ := jig.New(host.Deps(), jig.Dirs{Base: root, Bin: bin, Cache: cache, Home: home},
-    manifest.Current(), jig.WithHandlers(kinds.Defaults()...), jig.WithRecord(record))
+dirs := jig.Dirs{Base: root, Bin: bin, Cache: cache, Home: home}
+j, err := jig.New(host.Deps(), dirs, manifest.Current(), jig.WithHandlers(kinds.Defaults()...))
+if err != nil { … }
 if err := j.Validate(m); err != nil { … }
 
-statuses, _ := j.Status(ctx, m)                       // ok, newer, missing, outdated or unsupported, per item
-plan := j.Plan(statuses, jig.PlanOptions{})           // no side effects: print it for a dry run
-results, _ := j.Apply(ctx, plan, func(e jig.Event) {  // dependency order, parallel where possible
-    fmt.Println(e.Type, e.Action.Name)
-})
-if err := results.Err(); err != nil { … }
+statuses, err := j.Status(ctx, m)                      // ok, newer, missing, outdated or unsupported
+if err != nil { … }
 
-teardown := j.PlanRemove(statuses, jig.RemoveOptions{}) // reverse dependency order
+plan := j.Plan(statuses, jig.PlanOptions{})            // no side effects: print it for a dry run
+results, err := j.Apply(ctx, plan, func(e jig.Event) { // dependency order, parallel where possible
+    fmt.Println(e.Type, e.Action.Op, e.Action.Name)
+})
+if err != nil { … }
+if err := results.Err(); err != nil { … }
 ```
 
-Plan options:
-- `Select` limits the plan to some items, with `jig.Named("gh", "jq")`, `jig.OfKind(jig.KindTool)`,
-  `jig.Not(...)` or any `func(jig.Status) bool`. Nil means every item; `Named()` and `OfKind()` with no
-  arguments match nothing. `RemoveOptions.Select` does the same for removals, for example
-  `jig.Not(jig.OfKind(jig.KindTool))` to remove only extras.
-- `Force` reinstalls items that are already installed at the pin, and downgrades newer ones to it.
-- `Downgrade` picks which items newer than their pin are replaced with the pinned version, for exact pins:
+## Common workflows
+
+### Filtering and pinning plans
+
+`PlanOptions` narrows or widens what `Plan` schedules:
+
+- **`Select`** limits the plan to matching items using `jig.Named("gh", "jq")`,
+  `jig.OfKind(jig.KindTool)`, `jig.Not(...)` or any `func(jig.Status) bool` (`nil` means every item).
+- **`Force`** reinstalls items already at the pin and downgrades newer ones to it.
+- **`Downgrade`** replaces items newer than their pin with the pinned version when matched (`nil`
+  leaves newer items alone):
 
   ```go
   plan := j.Plan(statuses, jig.PlanOptions{Downgrade: jig.OfKind("npm-global")})
   ```
 
-  Newer items it doesn't match are left alone, as are all of them when it is nil.
+Versions are compared as semantic versions (`v1.2.3` and `1.2.3` are equal); non-semantic versions
+count as outdated unless they match the pin textually.
 
-Versions are compared as semantic versions, so `v1.2.3` and `1.2.3` are the same version. A version that
-isn't semantic counts as outdated unless it equals the pin exactly.
+### Removing and pruning items
 
-### Install record
+To remove currently installed items declared in a manifest, plan from `Status` (actions run in
+reverse dependency order):
 
-With `jig.WithRecord(path)`, jig keeps a JSON record of the items it manages. `Apply` updates it:
-installed items are added and removed ones dropped. Items that `Status` found already installed are
-added too, so a machine set up before the record existed is recorded on its next `Apply`, even of an
-empty plan. An unreadable record is replaced with what `Apply` knows, and `Apply` returns an error
-saying so.
+```go
+teardown := j.PlanRemove(statuses, jig.RemoveOptions{
+    Select: jig.Not(jig.OfKind(jig.KindTool)), // optional: remove only extras
+})
+```
 
-`PlanRemoveRecorded` plans removals from the record alone, without asking the tools that own the
-extras:
+To remove items a manifest **no longer declares**—or uninstall everything without probing the tools
+that own the extras—configure an install record with `jig.WithRecord(path)`. `Apply` keeps the JSON
+record up to date as items are detected, installed and removed:
 
 ```go
 prune, err := j.PlanRemoveRecorded(m, jig.RemoveOptions{})   // items m no longer declares
@@ -126,47 +119,76 @@ all, err := j.PlanRemoveRecorded(nil, jig.RemoveOptions{})   // everything recor
 one, err := j.PlanRemoveRecorded(nil, jig.RemoveOptions{Select: jig.Named("jq")})
 ```
 
-Both return an error wrapping `jig.ErrNoRecord` until a record has been written. `j.Record()` lists
-what is recorded.
+`j.Record()` lists the recorded entries. Both `PlanRemoveRecorded` and `Record` return an error
+wrapping `jig.ErrNoRecord` until the first `Apply` writes the record.
 
-Options:
-- `jig.WithRecord(path)` keeps the install record described above.
-- `jig.WithPostInstall(name, hook)` runs your own step after a tool or extra installs.
-- `jig.WithBeforeKind(kind, check)` runs a precondition once before installing extras of a kind,
-  such as checking that gh is logged in.
-- `jig.WithHandlers(...)` registers custom kinds by implementing `jig.Handler`.
-- `jig.WithCommandsFromPath()` makes handlers run parent tools such as `gh` from PATH instead of the
-  managed binaries, for health checks that should see what the user's shell runs.
-- `jig.WithParallelism(n)` and `jig.WithTimeouts(probe, mutate)` tune concurrency and timeouts.
-
-### Testing code that uses jig
-
-```go
-env := jigtest.NewEnv()
-env.Fetcher.Serve(url, archiveBytes)
-env.Extractor.Register(archiveBytes, map[string]jigtest.File{"gh_2.1.0/bin/gh": {Data: []byte("bin")}})
-env.Runner.Stub(jig.CommandResult{Stdout: "gh version 2.1.0"}, ghPath, "version")
-j, _ := jig.New(env.Deps(), dirs, manifest.Platform{OS: "linux", Arch: "amd64"})
-```
-
-## Keeping checksums current
+### Keeping checksums current
 
 ```sh
 go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml          # update
 go run github.com/rauny-brandao/jig/cmd/jig-checksums@latest -f tools.yaml -check   # verify in CI
 ```
 
-`jig-checksums` downloads every asset and rewrites only the `sha256` fields, keeping comments.
+`jig-checksums` downloads every asset and rewrites only the `sha256` fields, preserving comments and
+formatting.
 
-## Roadmap
+### Testing with `jigtest`
 
-| Version | Scope |
-|---|---|
-| v0.1 | Binaries: manifest, download and verify, safe extraction, Status / Plan / Apply, checksum updater |
-| v0.2 | Extras: five built-in kinds, custom kinds, `requires` ordering, removal |
-| v0.3 | Go 1.27, extra descriptions, running parent tools from PATH, full JDK removal, shorter command errors |
-| v0.4 | Plan filters (`Select`, `Named`, `OfKind`), versions newer than the pin reported and optionally downgraded |
-| v1.0 | Stable API. Install record: remove items dropped from the manifest, uninstall everything or a single item |
+`jigtest` provides in-memory implementations of `FS`, `Fetcher`, `Extractor` and `Runner`:
+
+```go
+env := jigtest.NewEnv()
+env.Fetcher.Serve(url, archiveBytes)
+env.Extractor.Register(archiveBytes, map[string]jigtest.File{"gh_2.1.0/bin/gh": {Data: []byte("bin")}})
+env.Runner.Stub(jig.CommandResult{Stdout: "gh version 2.1.0"}, ghPath, "version")
+
+j, _ := jig.New(env.Deps(), dirs, manifest.Platform{OS: "linux", Arch: "amd64"})
+```
+
+## Reference
+
+### Manifest fields
+
+Additional `tools` fields:
+- `extra_binaries` installs more files from the same archive (for example `uvx` next to `uv`).
+- `sdk_dir` with `archive_format: sdk` keeps a whole SDK directory intact under `Dirs.Base`.
+- `cleanup_paths` removes stale `Dirs.Home`-relative paths after a successful install.
+
+Fields common to every item in `extras`:
+- `requires` lists the tools and extras that must be installed first and removed last.
+- `platforms` limits the extra to operating systems (`darwin`) or platform keys (`darwin_arm64`).
+- `reinstall: always` reinstalls the extra on every apply, for sources that track a branch.
+- `description` documents what the extra is for (ignored by jig).
+
+### Built-in extra kinds
+
+Register all built-in handlers with `jig.WithHandlers(kinds.Defaults()...)`. Each kind rejects
+unknown fields during `Validate`:
+
+| Kind | Installs | Through | Required fields | Optional fields |
+|---|---|---|---|---|
+| `gh-extension` | GitHub CLI extensions | `gh` | `repo` | — |
+| `uv-tool` | Python applications into `Dirs.Bin` | `uv` | `source` | `hooks` (`post_install`, `pre_uninstall`) |
+| `node-runtime` | A Node.js release channel | `fnm` | `channel` | `default` |
+| `npm-global` | A global npm package (`--ignore-scripts`) | `fnm`, `npm` | — | `version`, `integrity` |
+| `jdk` | A Java Development Kit | Coursier (`cs`) | — | `jvm` (defaults to `name`) |
+
+> **Note:** Removing a `jdk` only deletes directories and archives inside Coursier's own caches. A
+> JDK located anywhere else is left in place and fails removal with `jig.ErrNotManaged`.
+
+### Options and custom kinds
+
+Pass options to `jig.New`:
+
+- `jig.WithHandlers(handlers...)` registers `kinds.Defaults()` or custom `jig.Handler` implementations.
+- `jig.WithRecord(path)` maintains the JSON install record for `PlanRemoveRecorded` and `Record`.
+- `jig.WithBeforeKind(kind, check)` runs a precondition once before the first action of `kind` in an
+  `Apply` (for example, checking that `gh` is authenticated).
+- `jig.WithPostInstall(name, hook)` runs a step after the named tool or extra installs.
+- `jig.WithCommandsFromPath()` runs parent tools such as `gh` from `PATH` instead of managed
+  binaries, for health checks that inspect what the user's shell runs.
+- `jig.WithParallelism(n)` and `jig.WithTimeouts(probe, mutate)` tune concurrency and command
+  timeouts.
 
 ## License
 
