@@ -19,7 +19,7 @@ import (
 	"github.com/rauny-brandao/jig/manifest"
 )
 
-// ErrChecksumMismatch means a download did not match the manifest's SHA-256.
+// ErrChecksumMismatch means a download did not match the manifest's checksum.
 var ErrChecksumMismatch = fetch.ErrChecksumMismatch
 
 // FS is the filesystem jig installs into.

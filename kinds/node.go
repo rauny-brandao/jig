@@ -6,13 +6,18 @@ package kinds
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/rauny-brandao/jig"
+	"github.com/rauny-brandao/jig/internal/check"
 	"github.com/rauny-brandao/jig/manifest"
+	"github.com/rauny-brandao/jig/version"
 )
 
 // NodeRuntime installs a Node.js release channel with fnm. Fields:
@@ -88,14 +93,20 @@ func (h NodeRuntime) Remove(ctx context.Context, env jig.Env, e manifest.Extra) 
 }
 
 // NPMGlobal installs a global npm package into a Node.js runtime managed by
-// fnm. The extra must require a node-runtime extra, whose channel it uses.
-// Fields:
+// fnm, with install scripts disabled (--ignore-scripts). The extra must
+// require a node-runtime extra, whose channel it uses. Fields:
 //
-//	version  the exact version to install; when unset, the latest is
-//	         installed and any installed version counts as current (optional)
+//	version    the exact version to install; when unset, the latest is
+//	           installed and any installed version counts as current (optional)
+//	integrity  the expected npm SHA-512 Subresource Integrity digest
+//	           ("sha512-<base64>") of the package tarball; when set, the
+//	           tarball is downloaded with `npm pack` and verified against
+//	           it before installing (optional, requires version)
 type NPMGlobal struct{}
 
-var _npmGlobalFields = fields{optional: []string{"version"}}
+const _sha512Prefix = "sha512-"
+
+var _npmGlobalFields = fields{optional: []string{"version", "integrity"}}
 
 // Kind implements jig.Handler.
 func (NPMGlobal) Kind() jig.Kind { return "npm-global" }
@@ -107,6 +118,36 @@ func (NPMGlobal) Validate(e manifest.Extra) error {
 	}
 	if len(e.Requires) == 0 {
 		return errors.New("must require the node-runtime extra it installs into")
+	}
+	if integrity := e.Param("integrity"); integrity != "" {
+		if !check.IsPlainName(npmTarballSlug(e.Name)) {
+			return fmt.Errorf("invalid package name %q", e.Name)
+		}
+		ver := e.Param("version")
+		if ver == "" {
+			return errors.New("integrity requires version")
+		}
+		if strings.HasPrefix(ver, "v") {
+			return fmt.Errorf("version %q must not have a leading \"v\" when integrity is set", ver)
+		}
+		if _, err := version.Parse(ver); err != nil {
+			return fmt.Errorf("integrity requires an exact semantic version: %w", err)
+		}
+		if err := validateSHA512Integrity(integrity); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSHA512Integrity(s string) error {
+	encoded, ok := strings.CutPrefix(s, _sha512Prefix)
+	if !ok {
+		return fmt.Errorf("integrity %q must start with %q", s, _sha512Prefix)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(decoded) != sha512.Size {
+		return fmt.Errorf("integrity %q is not a valid base64-encoded SHA-512 digest", s)
 	}
 	return nil
 }
@@ -137,12 +178,51 @@ func (NPMGlobal) Install(ctx context.Context, env jig.Env, e manifest.Extra) err
 	if err != nil {
 		return err
 	}
+	if integrity := e.Param("integrity"); integrity != "" {
+		return installVerifiedNPM(ctx, env, channel, e, integrity)
+	}
 	pkg := e.Name
 	if v := e.Param("version"); v != "" {
 		pkg += "@" + v
 	}
-	_, err = env.Mutate(ctx, nil, env.Command("fnm"), npmArgs(env, channel, "install", "-g", pkg)...)
+	_, err = env.Mutate(ctx, nil, env.Command("fnm"), npmArgs(env, channel, "install", "-g", "--ignore-scripts", pkg)...)
 	return err
+}
+
+func installVerifiedNPM(ctx context.Context, env jig.Env, channel string, e manifest.Extra, wantIntegrity string) error {
+	slug := npmTarballSlug(e.Name)
+	ver := e.Param("version")
+	pkg := e.Name + "@" + ver
+
+	workDir := filepath.Join(env.Dirs.Cache, "npm-"+slug)
+	if err := env.FS.MkdirAll(workDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", workDir, err)
+	}
+	defer func() { _ = env.FS.Remove(workDir) }()
+
+	fnm := env.Command("fnm")
+	if _, err := env.Mutate(ctx, nil, fnm, npmArgs(env, channel, "pack", "--location=global", "--ignore-scripts", "--pack-destination", workDir, pkg)...); err != nil {
+		return err
+	}
+
+	tarball := filepath.Join(workDir, slug+"-"+ver+".tgz")
+	data, err := env.FS.ReadFile(tarball)
+	if err != nil {
+		return fmt.Errorf("read packed tarball %s: %w", tarball, err)
+	}
+	sum := sha512.Sum512(data)
+	if got := _sha512Prefix + base64.StdEncoding.EncodeToString(sum[:]); got != wantIntegrity {
+		return fmt.Errorf("verify %s: %w: expected %s, got %s", pkg, jig.ErrChecksumMismatch, wantIntegrity, got)
+	}
+
+	_, err = env.Mutate(ctx, nil, fnm, npmArgs(env, channel, "install", "-g", "--ignore-scripts", tarball)...)
+	return err
+}
+
+// npmTarballSlug converts a package name such as "@asyncapi/cli" into the
+// filename stem `npm pack` uses ("asyncapi-cli").
+func npmTarballSlug(name string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(name, "@"), "/", "-")
 }
 
 // Remove implements jig.Handler.

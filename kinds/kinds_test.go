@@ -5,6 +5,8 @@
 package kinds_test
 
 import (
+	"crypto/sha512"
+	"encoding/base64"
 	"errors"
 	"maps"
 	"path/filepath"
@@ -86,6 +88,11 @@ func TestValidate(t *testing.T) {
 		{"node channel required", kinds.NodeRuntime{}, extra("node-runtime", "node", nil), "channel is required"},
 		{"node default value", kinds.NodeRuntime{}, extra("node-runtime", "node", map[string]string{"channel": "22", "default": "yes"}), "default must be true or false"},
 		{"npm needs runtime", kinds.NPMGlobal{}, extra("npm-global", "typescript", nil), "must require"},
+		{"npm integrity without version", kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"integrity": sha512Integrity([]byte("tgz"))}}, "integrity requires version"},
+		{"npm integrity with v-prefixed version", kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "v5.9.3", "integrity": sha512Integrity([]byte("tgz"))}}, `must not have a leading "v"`},
+		{"npm integrity with non-exact version", kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "latest", "integrity": sha512Integrity([]byte("tgz"))}}, "exact semantic version"},
+		{"npm integrity wrong algorithm", kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "5.9.3", "integrity": "sha256-abc"}}, `must start with "sha512-"`},
+		{"npm integrity short digest", kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "5.9.3", "integrity": "sha512-YWJj"}}, "not a valid base64-encoded SHA-512"},
 		{"jdk unknown field", kinds.JDK{}, extra("jdk", "temurin:25", map[string]string{"vendor": "x"}), `unknown field "vendor"`},
 	}
 	for _, tt := range tests {
@@ -105,6 +112,7 @@ func TestValidate(t *testing.T) {
 		{kinds.UVTool{}, manifest.Extra{Kind: "uv-tool", Name: "app", Params: map[string]string{"source": "app"}, Hooks: manifest.Hooks{PostInstall: []string{"--x"}}}},
 		{kinds.NodeRuntime{}, extra("node-runtime", "node", map[string]string{"channel": "lts-latest", "default": "true"})},
 		{kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "5.9.3"}}},
+		{kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "@asyncapi/cli", Requires: []string{"node"}, Params: map[string]string{"version": "6.2.0", "integrity": sha512Integrity([]byte("tgz"))}}},
 		{kinds.JDK{}, extra("jdk", "temurin:25", nil)},
 	}
 	for _, v := range valid {
@@ -299,11 +307,64 @@ func TestNPMGlobal(t *testing.T) {
 		}
 	})
 
-	t.Run("install pins the version and uses npm.cmd on Windows", func(t *testing.T) {
+	t.Run("install pins the version, disables scripts and uses npm.cmd on Windows", func(t *testing.T) {
 		fake, env := setup(t, manifest.Platform{OS: "windows", Arch: "amd64"}, m)
-		fake.Runner.Stub(ok(""), "fnm", "exec", "--using=lts-latest", "--", "npm.cmd", "install", "-g", "typescript@5.9.3")
+		fake.Runner.Stub(ok(""), "fnm", "exec", "--using=lts-latest", "--", "npm.cmd", "install", "-g", "--ignore-scripts", "typescript@5.9.3")
 		if err := (kinds.NPMGlobal{}).Install(t.Context(), env, ts); err != nil {
 			t.Fatal(err)
+		}
+	})
+
+	t.Run("install with integrity packs, verifies SHA-512, installs tarball and cleans up", func(t *testing.T) {
+		tarballBytes := []byte("verified package tarball")
+		pinned := manifest.Extra{
+			Kind: "npm-global", Name: "@asyncapi/cli", Requires: []string{"node"},
+			Params: map[string]string{"version": "6.2.0", "integrity": sha512Integrity(tarballBytes)},
+		}
+		fake, env := setup(t, _linux, &manifest.Manifest{Extras: []manifest.Extra{node, pinned}})
+		workDir := filepath.Join(_dirs.Cache, "npm-asyncapi-cli")
+		tarball := filepath.Join(workDir, "asyncapi-cli-6.2.0.tgz")
+		fake.FS.Seed(tarball, tarballBytes, 0o644)
+		fake.Runner.Stub(ok("asyncapi-cli-6.2.0.tgz\n"), "fnm", "exec", "--using=lts-latest", "--", "npm", "pack", "--location=global", "--ignore-scripts", "--pack-destination", workDir, "@asyncapi/cli@6.2.0")
+		fake.Runner.Stub(ok(""), "fnm", "exec", "--using=lts-latest", "--", "npm", "install", "-g", "--ignore-scripts", tarball)
+
+		if err := (kinds.NPMGlobal{}).Install(t.Context(), env, pinned); err != nil {
+			t.Fatalf("Install() = %v", err)
+		}
+		wantCalls := []string{
+			"fnm exec --using=lts-latest -- npm pack --location=global --ignore-scripts --pack-destination " + workDir + " @asyncapi/cli@6.2.0",
+			"fnm exec --using=lts-latest -- npm install -g --ignore-scripts " + tarball,
+		}
+		if got := calls(fake); !slices.Equal(got, wantCalls) {
+			t.Errorf("calls =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(wantCalls, "\n"))
+		}
+		if fake.FS.Exists(workDir) {
+			t.Errorf("work directory %s was not removed after install", workDir)
+		}
+	})
+
+	t.Run("install with mismatched integrity aborts before npm install and cleans up", func(t *testing.T) {
+		pinned := manifest.Extra{
+			Kind: "npm-global", Name: "@asyncapi/cli", Requires: []string{"node"},
+			Params: map[string]string{"version": "6.2.0", "integrity": sha512Integrity([]byte("expected bytes"))},
+		}
+		fake, env := setup(t, _linux, &manifest.Manifest{Extras: []manifest.Extra{node, pinned}})
+		workDir := filepath.Join(_dirs.Cache, "npm-asyncapi-cli")
+		tarball := filepath.Join(workDir, "asyncapi-cli-6.2.0.tgz")
+		fake.FS.Seed(tarball, []byte("tampered bytes"), 0o644)
+		fake.Runner.Stub(ok("asyncapi-cli-6.2.0.tgz\n"), "fnm", "exec", "--using=lts-latest", "--", "npm", "pack", "--location=global", "--ignore-scripts", "--pack-destination", workDir, "@asyncapi/cli@6.2.0")
+
+		err := (kinds.NPMGlobal{}).Install(t.Context(), env, pinned)
+		if !errors.Is(err, jig.ErrChecksumMismatch) {
+			t.Fatalf("Install() = %v, want ErrChecksumMismatch", err)
+		}
+		for _, c := range calls(fake) {
+			if strings.Contains(c, "npm install") {
+				t.Errorf("npm install ran despite integrity mismatch: %s", c)
+			}
+		}
+		if fake.FS.Exists(workDir) {
+			t.Errorf("work directory %s was not removed after mismatch", workDir)
 		}
 	})
 
@@ -313,6 +374,11 @@ func TestNPMGlobal(t *testing.T) {
 			t.Errorf("Install() = %v, want a missing runtime error", err)
 		}
 	})
+}
+
+func sha512Integrity(data []byte) string {
+	sum := sha512.Sum512(data)
+	return "sha512-" + base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func TestJDK(t *testing.T) {
