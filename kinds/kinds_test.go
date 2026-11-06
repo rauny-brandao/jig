@@ -85,6 +85,7 @@ func TestValidate(t *testing.T) {
 		{"gh typo", kinds.GhExtension{}, extra("gh-extension", "stack", map[string]string{"repo": "a/b", "rpo": "a/b"}), `unknown field "rpo"`},
 		{"gh hooks", kinds.GhExtension{}, manifest.Extra{Kind: "gh-extension", Name: "s", Params: map[string]string{"repo": "a/b"}, Hooks: manifest.Hooks{PostInstall: []string{"x"}}}, "does not support hooks"},
 		{"uv source required", kinds.UVTool{}, extra("uv-tool", "app", nil), "source is required"},
+		{"uv unknown field", kinds.UVTool{}, extra("uv-tool", "app", map[string]string{"source": "app", "repo": "a/b"}), `unknown field "repo"`},
 		{"node channel required", kinds.NodeRuntime{}, extra("node-runtime", "node", nil), "channel is required"},
 		{"node default value", kinds.NodeRuntime{}, extra("node-runtime", "node", map[string]string{"channel": "22", "default": "yes"}), "default must be true or false"},
 		{"npm needs runtime", kinds.NPMGlobal{}, extra("npm-global", "typescript", nil), "must require"},
@@ -109,7 +110,7 @@ func TestValidate(t *testing.T) {
 		e manifest.Extra
 	}{
 		{kinds.GhExtension{}, extra("gh-extension", "stack", map[string]string{"repo": "github/gh-stack"})},
-		{kinds.UVTool{}, manifest.Extra{Kind: "uv-tool", Name: "app", Params: map[string]string{"source": "app"}, Hooks: manifest.Hooks{PostInstall: []string{"--x"}}}},
+		{kinds.UVTool{}, manifest.Extra{Kind: "uv-tool", Name: "app", Params: map[string]string{"source": "app", "version": "1.2.3"}, Hooks: manifest.Hooks{PostInstall: []string{"--x"}}}},
 		{kinds.NodeRuntime{}, extra("node-runtime", "node", map[string]string{"channel": "lts-latest", "default": "true"})},
 		{kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "typescript", Requires: []string{"node"}, Params: map[string]string{"version": "5.9.3"}}},
 		{kinds.NPMGlobal{}, manifest.Extra{Kind: "npm-global", Name: "@asyncapi/cli", Requires: []string{"node"}, Params: map[string]string{"version": "6.2.0", "integrity": sha512Integrity([]byte("tgz"))}}},

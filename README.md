@@ -168,7 +168,7 @@ unknown fields during `Validate`:
 | Kind | Installs | Through | Required fields | Optional fields |
 |---|---|---|---|---|
 | `gh-extension` | GitHub CLI extensions | `gh` | `repo` | — |
-| `uv-tool` | Python applications into `Dirs.Bin` | `uv` | `source` | `hooks` (`post_install`, `pre_uninstall`) |
+| `uv-tool` | Python applications into `Dirs.Bin` | `uv` | `source` | `version`, `hooks` (`post_install`, `pre_uninstall`) |
 | `node-runtime` | A Node.js release channel | `fnm` | `channel` | `default` |
 | `npm-global` | A global npm package (`--ignore-scripts`) | `fnm`, `npm` | — | `version`, `integrity` |
 | `jdk` | A Java Development Kit | Coursier (`cs`) | — | `jvm` (defaults to `name`) |
