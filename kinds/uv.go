@@ -17,14 +17,15 @@ import (
 // UVTool installs Python applications with `uv tool install`, placing their
 // executables in jig's bin directory. Fields:
 //
-//	source  what to install: a package name or a git URL (required)
+//	source   what to install: a package name or a git URL (required)
+//	version  expected version, compared against `uv tool list`
 //
 // Hooks run the installed executable: post_install after installing and
 // pre_uninstall, best effort, before removing. A source that tracks a branch
-// should set reinstall: always.
+// without a version pin should set reinstall: always.
 type UVTool struct{}
 
-var _uvToolFields = fields{required: []string{"source"}, hooks: true}
+var _uvToolFields = fields{required: []string{"source"}, optional: []string{"version"}, hooks: true}
 
 // Kind implements jig.Handler.
 func (UVTool) Kind() jig.Kind { return "uv-tool" }
